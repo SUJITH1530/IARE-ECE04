@@ -299,6 +299,132 @@ def save_attendance_records(records: list) -> None:
         conn.close()
 
 
+def _pdf_escape_text(value: str) -> str:
+    safe_value = (value or "").replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    return safe_value.encode("latin-1", "replace").decode("latin-1")
+
+
+def build_simple_attendance_pdf(
+    selected_date: str,
+    workshop_label: str,
+    selected_session: str,
+    report_rows: list,
+    present_count: int,
+    absent_count: int,
+) -> bytes:
+    # Keep line counts conservative for A4/Letter-like page height.
+    max_data_lines_per_page = 36
+    row_lines = [
+        f"{index + 1:>3}. {row['roll_number']:<16} {row['status']}"
+        for index, row in enumerate(report_rows)
+    ]
+
+    header_lines = [
+        "ECE Attendance Report",
+        f"Workshop: {workshop_label}",
+        f"Date: {selected_date}    Session: {selected_session}",
+        f"Present: {present_count}    Absent: {absent_count}",
+        "",
+        "S.No Roll Number       Status",
+        "--------------------------------",
+    ]
+
+    pages = []
+    for start in range(0, len(row_lines), max_data_lines_per_page):
+        page_lines = list(header_lines)
+        page_lines.extend(row_lines[start : start + max_data_lines_per_page])
+        pages.append(page_lines)
+
+    if not pages:
+        pages = [header_lines + ["No students found for this report."]]
+
+    objects = []
+
+    def add_object(content: bytes) -> int:
+        objects.append(content)
+        return len(objects)
+
+    catalog_obj = add_object(b"<< /Type /Catalog /Pages 2 0 R >>")
+    pages_obj = add_object(b"<< /Type /Pages /Kids [] /Count 0 >>")
+
+    page_object_numbers = []
+    content_object_numbers = []
+
+    for page_lines in pages:
+        content_lines = ["BT", "/F1 11 Tf", "50 770 Td"]
+        for idx, line in enumerate(page_lines):
+            escaped_line = _pdf_escape_text(line)
+            if idx == 0:
+                content_lines.append(f"({escaped_line}) Tj")
+            else:
+                content_lines.append("0 -18 Td")
+                content_lines.append(f"({escaped_line}) Tj")
+        content_lines.append("ET")
+        content_stream = "\n".join(content_lines).encode("latin-1", "replace")
+
+        content_obj = add_object(
+            b"<< /Length "
+            + str(len(content_stream)).encode("ascii")
+            + b" >>\nstream\n"
+            + content_stream
+            + b"\nendstream"
+        )
+        page_obj = add_object(
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            b"/Resources << /Font << /F1 "
+            + str(0).encode("ascii")
+            + b" 0 R >> >> /Contents "
+            + str(content_obj).encode("ascii")
+            + b" 0 R >>"
+        )
+        content_object_numbers.append(content_obj)
+        page_object_numbers.append(page_obj)
+
+    font_obj = add_object(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+
+    # Replace placeholder font object number in page objects.
+    for page_obj_num in page_object_numbers:
+        original = objects[page_obj_num - 1]
+        objects[page_obj_num - 1] = original.replace(b"/F1 0 0 R", f"/F1 {font_obj} 0 R".encode("ascii"))
+
+    kids = b"[" + b" ".join(f"{num} 0 R".encode("ascii") for num in page_object_numbers) + b"]"
+    objects[pages_obj - 1] = (
+        b"<< /Type /Pages /Kids "
+        + kids
+        + b" /Count "
+        + str(len(page_object_numbers)).encode("ascii")
+        + b" >>"
+    )
+
+    result = bytearray()
+    result.extend(b"%PDF-1.4\n")
+    offsets = [0]
+
+    for index, obj_content in enumerate(objects, start=1):
+        offsets.append(len(result))
+        result.extend(f"{index} 0 obj\n".encode("ascii"))
+        result.extend(obj_content)
+        result.extend(b"\nendobj\n")
+
+    xref_start = len(result)
+    result.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+    result.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        result.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+
+    result.extend(
+        b"trailer\n<< /Size "
+        + str(len(objects) + 1).encode("ascii")
+        + b" /Root "
+        + str(catalog_obj).encode("ascii")
+        + b" 0 R >>\nstartxref\n"
+        + str(xref_start).encode("ascii")
+        + b"\n%%EOF"
+    )
+
+    return bytes(result)
+
+
 @app.route("/", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -663,6 +789,57 @@ def export_report_csv():
             ])
 
     return send_file(export_path, as_attachment=True, download_name=export_filename)
+
+
+@app.route("/attendance/export-pdf", methods=["GET"])
+@role_required("hod")
+def export_report_pdf():
+    selected_date = request.args.get("date", date.today().isoformat())
+    workshop_key = request.args.get("workshop", "vlsi")
+    selected_session = request.args.get("session", "FN")
+    if workshop_key not in {"vlsi", "embedded"}:
+        workshop_key = "vlsi"
+    if selected_session not in SESSION_OPTIONS:
+        selected_session = "FN"
+
+    records = [
+        record
+        for record in load_attendance_records()
+        if (
+            record.get("date") == selected_date
+            and record.get("workshop_type") == workshop_key
+            and (record.get("session") or "FN") == selected_session
+        )
+    ]
+
+    status_map = {record["roll_number"]: record["status"] for record in records}
+    all_students = get_workshop_students(workshop_key)
+
+    report_rows = []
+    present_count = 0
+    absent_count = 0
+    for roll in all_students:
+        status = status_map.get(roll, "Absent")
+        if status == "Present":
+            present_count += 1
+        else:
+            absent_count += 1
+        report_rows.append({"roll_number": roll, "status": status})
+
+    pdf_bytes = build_simple_attendance_pdf(
+        selected_date=selected_date,
+        workshop_label=WORKSHOP_LABELS[workshop_key],
+        selected_session=selected_session,
+        report_rows=report_rows,
+        present_count=present_count,
+        absent_count=absent_count,
+    )
+    file_name = f"attendance_{workshop_key}_{selected_date}_{selected_session}.pdf"
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={file_name}"},
+    )
 
 
 @app.route("/attendance/update", methods=["POST"])

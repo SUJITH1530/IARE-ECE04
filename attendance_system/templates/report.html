@@ -245,6 +245,7 @@
 
             <div class="actions">
                 <a class="btn btn-primary" href="{{ url_for('export_report_csv', date=selected_date, workshop=workshop_key, session=selected_session) }}">Export CSV</a>
+                <a class="btn btn-primary" href="{{ url_for('export_report_pdf', date=selected_date, workshop=workshop_key, session=selected_session) }}">Download PDF</a>
                 <form class="inline-actions-form" method="post" action="{{ url_for('delete_attendance_batch') }}" onsubmit="return confirm('Delete all attendance records for this selected batch?');">
                     <input type="hidden" name="date" value="{{ selected_date }}">
                     <input type="hidden" name="workshop" value="{{ workshop_key }}">

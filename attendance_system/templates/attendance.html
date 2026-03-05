@@ -149,6 +149,13 @@
             margin-top: 14px;
         }
 
+        .bulk-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
         .session-panel {
             border: 1px solid var(--border);
             border-radius: 10px;
@@ -277,6 +284,12 @@
 
                 <form method="post">
                     <input type="hidden" name="session" value="{{ selected_session }}">
+
+                    <div class="bulk-actions">
+                        <button class="btn btn-muted" type="button" onclick="setAllAttendance('Present')">Mark All Present</button>
+                        <button class="btn btn-muted" type="button" onclick="setAllAttendance('Absent')">Mark All Absent</button>
+                    </div>
+
                     <table>
                         <thead>
                             <tr>
@@ -317,5 +330,14 @@
             <p class="empty">No students found. Please ask HOD to upload the corresponding CSV file.</p>
         {% endif %}
     </div>
+    <script>
+        function setAllAttendance(status) {
+            const targetValue = status === 'Present' ? 'Present' : 'Absent';
+            const selectors = document.querySelectorAll('input[type="radio"][value="' + targetValue + '"]');
+            selectors.forEach((input) => {
+                input.checked = true;
+            });
+        }
+    </script>
 </body>
 </html>
