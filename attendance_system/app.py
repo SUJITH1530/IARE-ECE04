@@ -2,7 +2,7 @@ import csv
 import io
 import os
 import sqlite3
-from datetime import date
+from datetime import date, datetime
 from functools import wraps
 
 from flask import (
@@ -32,6 +32,8 @@ USERS = {
     "ecehod": {"password": "ece@04", "role": "hod"},
     "faculty": {"password": "iare@1234", "role": "faculty"},
 }
+
+STUDENT_COMMON_PASSWORD = os.environ.get("STUDENT_COMMON_PASSWORD", "IARE@2026")
 
 WORKSHOP_FILES = {
     "vlsi": "vlsi_students.csv",
@@ -73,11 +75,20 @@ def ensure_database() -> None:
                 status TEXT NOT NULL,
                 date TEXT NOT NULL,
                 session TEXT NOT NULL DEFAULT 'FN',
+                posted_at TEXT,
                 workshop_type TEXT NOT NULL,
                 PRIMARY KEY (roll_number, date, session, workshop_type)
             )
             """
         )
+
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(attendance_records)").fetchall()
+        }
+        if "posted_at" not in columns:
+            conn.execute("ALTER TABLE attendance_records ADD COLUMN posted_at TEXT")
+
         conn.commit()
     finally:
         conn.close()
@@ -102,6 +113,7 @@ def migrate_csv_attendance_to_db_if_needed() -> None:
             status = row.get("status", "Absent").strip() or "Absent"
             record_date = row.get("date", "").strip()
             session_name = (row.get("session") or "FN").strip() or "FN"
+            posted_at = row.get("posted_at", "").strip() or None
             workshop_type = row.get("workshop_type", "").strip()
 
             if not (roll_number and record_date and workshop_type):
@@ -110,10 +122,17 @@ def migrate_csv_attendance_to_db_if_needed() -> None:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO attendance_records
-                (roll_number, status, date, session, workshop_type)
-                VALUES (?, ?, ?, ?, ?)
+                (roll_number, status, date, session, posted_at, workshop_type)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (roll_number, status, record_date, session_name, workshop_type),
+                (
+                    roll_number,
+                    status,
+                    record_date,
+                    session_name,
+                    posted_at,
+                    workshop_type,
+                ),
             )
 
         conn.commit()
@@ -195,6 +214,19 @@ def get_workshop_students(workshop_key: str) -> list:
     return read_roll_numbers_from_csv(file_path)
 
 
+def build_users() -> dict:
+    users = dict(USERS)
+    for workshop_key in WORKSHOP_FILES:
+        for roll_number in get_workshop_students(workshop_key):
+            normalized_roll = roll_number.strip().upper()
+            if normalized_roll:
+                users.setdefault(
+                    normalized_roll,
+                    {"password": STUDENT_COMMON_PASSWORD, "role": "student"},
+                )
+    return users
+
+
 def add_student_to_workshop(workshop_key: str, roll_number: str) -> tuple[bool, str]:
     if workshop_key not in WORKSHOP_FILES:
         return False, "Invalid domain selected."
@@ -223,7 +255,7 @@ def load_attendance_records() -> list:
     try:
         rows = conn.execute(
             """
-            SELECT roll_number, status, date, session, workshop_type
+            SELECT roll_number, status, date, session, posted_at, workshop_type
             FROM attendance_records
             """
         ).fetchall()
@@ -233,6 +265,7 @@ def load_attendance_records() -> list:
                 "status": row["status"],
                 "date": row["date"],
                 "session": row["session"],
+                "posted_at": row["posted_at"],
                 "workshop_type": row["workshop_type"],
             }
             for row in rows
@@ -249,14 +282,15 @@ def save_attendance_records(records: list) -> None:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO attendance_records
-                (roll_number, status, date, session, workshop_type)
-                VALUES (?, ?, ?, ?, ?)
+                (roll_number, status, date, session, posted_at, workshop_type)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.get("roll_number", ""),
                     record.get("status", "Absent"),
                     record.get("date", ""),
                     record.get("session", "FN"),
+                    record.get("posted_at"),
                     record.get("workshop_type", ""),
                 ),
             )
@@ -271,13 +305,21 @@ def login():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
 
-        user = USERS.get(username)
+        all_users = build_users()
+        user = all_users.get(username)
+        if not user:
+            user = all_users.get(username.upper())
+        if not user:
+            user = all_users.get(username.lower())
+
         if user and user["password"] == password:
             session["username"] = username
             session["role"] = user["role"]
             flash("Login successful.", "success")
             if user["role"] == "hod":
                 return redirect(url_for("hod_dashboard"))
+            if user["role"] == "student":
+                return redirect(url_for("student_dashboard"))
             return redirect(url_for("faculty_dashboard"))
 
         flash("Invalid username or password.", "error")
@@ -330,6 +372,81 @@ def faculty_dashboard():
     return render_template("faculty_dashboard.html", counts=counts)
 
 
+@app.route("/student/dashboard")
+@role_required("student")
+def student_dashboard():
+    username = session.get("username", "").strip().upper()
+    selected_workshop_key = None
+    workshop_label = "Not in workshop"
+    for key in WORKSHOP_FILES:
+        if username in get_workshop_students(key):
+            workshop_label = WORKSHOP_LABELS[key]
+            selected_workshop_key = key
+            break
+
+    current_date = date.today().isoformat()
+    checked_at = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
+    posted_attendance = None
+    posted_at_display = None
+    attendance_percentage = None
+    present_classes = 0
+    total_classes = 0
+
+    if selected_workshop_key:
+        student_records = [
+            record
+            for record in load_attendance_records()
+            if (
+                record.get("roll_number") == username
+                and record.get("workshop_type") == selected_workshop_key
+            )
+        ]
+        total_classes = len(student_records)
+        present_classes = sum(
+            1 for record in student_records if record.get("status") == "Present"
+        )
+        if total_classes > 0:
+            attendance_percentage = round((present_classes / total_classes) * 100, 2)
+
+        today_records = [
+            record
+            for record in student_records
+            if (
+                record.get("date") == current_date
+            )
+        ]
+        if today_records:
+            # Prefer AN over FN for same-day display when both exist.
+            posted_attendance = sorted(
+                today_records,
+                key=lambda item: 1 if (item.get("session") or "FN") == "AN" else 0,
+            )[-1]
+
+        if posted_attendance and posted_attendance.get("posted_at"):
+            raw_posted_at = posted_attendance.get("posted_at")
+            try:
+                posted_at_display = datetime.fromisoformat(raw_posted_at).strftime(
+                    "%Y-%m-%d %I:%M:%S %p"
+                )
+            except (ValueError, TypeError):
+                posted_at_display = str(raw_posted_at)
+
+    if attendance_percentage is None:
+        attendance_percentage = 0.0
+
+    return render_template(
+        "student_dashboard.html",
+        roll_number=username,
+        workshop_label=workshop_label,
+        checked_at=checked_at,
+        posted_attendance=posted_attendance,
+        posted_at_display=posted_at_display,
+        attendance_percentage=attendance_percentage,
+        present_classes=present_classes,
+        total_classes=total_classes,
+    )
+
+
 @app.route("/students/add", methods=["POST"])
 @role_required("hod")
 def add_student_hod():
@@ -357,6 +474,7 @@ def mark_attendance(workshop_key):
         selected_session = "FN"
 
     if request.method == "POST":
+        posted_at = datetime.now().isoformat(timespec="seconds")
         submitted_status = {}
         for roll in students:
             status = request.form.get(f"status_{roll}", "Absent")
@@ -381,6 +499,7 @@ def mark_attendance(workshop_key):
                     "status": status,
                     "date": current_date,
                     "session": selected_session,
+                    "posted_at": posted_at,
                     "workshop_type": workshop_key,
                 }
             )

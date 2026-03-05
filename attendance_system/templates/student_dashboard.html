@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Dashboard</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            color: #1b1f24;
+        }
+        .container {
+            max-width: 720px;
+            margin: 48px auto;
+            padding: 24px;
+        }
+        .card {
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+        }
+        h1 {
+            margin-top: 0;
+            font-size: 24px;
+        }
+        .meta {
+            margin: 12px 0;
+            font-size: 16px;
+        }
+        .status {
+            margin: 16px 0;
+            padding: 14px;
+            border-radius: 8px;
+            background: #f7f9fc;
+            border: 1px solid #d9e2ef;
+        }
+        .present {
+            color: #0b7a38;
+            font-weight: 700;
+        }
+        .absent {
+            color: #b42318;
+            font-weight: 700;
+        }
+        .not-posted {
+            color: #b42318;
+            font-weight: 700;
+            font-size: 17px;
+        }
+        .attendance-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-weight: 700;
+            margin-right: 6px;
+        }
+        .attendance-good {
+            color: #0b7a38;
+            background: #e7f7ee;
+            border: 1px solid #a8dfbf;
+        }
+        .attendance-medium {
+            color: #9a6700;
+            background: #fff4d6;
+            border: 1px solid #f3c76b;
+        }
+        .attendance-low {
+            color: #b42318;
+            background: #ffe9e7;
+            border: 1px solid #f7b1ac;
+        }
+        a {
+            color: #0b5fff;
+            text-decoration: none;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>Student Login Successful</h1>
+            <p class="meta"><strong>Username (Roll Number):</strong> {{ roll_number }}</p>
+            <p class="meta"><strong>Workshop:</strong> {{ workshop_label }}</p>
+            <p class="meta"><strong>Checked At:</strong> {{ checked_at }}</p>
+
+            <div class="status">
+                {% if posted_attendance %}
+                    <p class="meta"><strong>Attendance Date:</strong> {{ posted_attendance.date }}</p>
+                    <p class="meta"><strong>Attendance Posted At:</strong> {{ posted_at_display or "N/A" }}</p>
+                    <p class="meta"><strong>Session:</strong> {{ posted_attendance.session }}</p>
+                    {% if posted_attendance.status == "Present" %}
+                        <p class="meta"><strong>Status:</strong> <span class="present">PRESENT</span></p>
+                    {% else %}
+                        <p class="meta"><strong>Status:</strong> <span class="absent">ABSENT</span></p>
+                    {% endif %}
+                {% else %}
+                    <p class="meta not-posted"><strong>ATTENDANCE NOT POSTED. CONTACT HOD/FACULTY.</strong></p>
+                {% endif %}
+                <p class="meta">
+                    <strong>Attendance %:</strong>
+                    {{ '%.2f'|format(attendance_percentage) }}% ({{ present_classes }}/{{ total_classes }})
+
+            <p class="meta">
+                <strong>Attendance %:</strong>
+                {% if attendance_percentage >= 75 %}
+                    <span class="attendance-badge attendance-good">{{ '%.2f'|format(attendance_percentage) }}%</span>
+                {% elif attendance_percentage >= 60 %}
+                    <span class="attendance-badge attendance-medium">{{ '%.2f'|format(attendance_percentage) }}%</span>
+                {% else %}
+                    <span class="attendance-badge attendance-low">{{ '%.2f'|format(attendance_percentage) }}%</span>
+                {% endif %}
+                ({{ present_classes }}/{{ total_classes }})
+            </p>
+            <p><a href="{{ url_for('logout') }}">Logout</a></p>
+        </div>
+    </div>
+</body>
+</html>
