@@ -733,38 +733,58 @@ def mark_attendance(workshop_key):
         return redirect(url_for("faculty_dashboard"))
 
     students = get_workshop_students(workshop_key)
-    current_date = date.today().isoformat()
+    selected_date = request.args.get("date", date.today().isoformat())
     selected_session = request.args.get("session", "FN")
     if request.method == "POST":
+        selected_date = request.form.get("date", date.today().isoformat())
         selected_session = request.form.get("session", "FN")
+
+    # Guard against invalid date values and fall back to today.
+    try:
+        datetime.strptime(selected_date, "%Y-%m-%d")
+    except ValueError:
+        selected_date = date.today().isoformat()
+
     if selected_session not in SESSION_OPTIONS:
         selected_session = "FN"
 
     if request.method == "POST":
+        existing_records = load_attendance_records()
+        already_posted = any(
+            record.get("workshop_type") == workshop_key
+            and record.get("date") == selected_date
+            and (record.get("session") or "FN") == selected_session
+            for record in existing_records
+        )
+
+        if already_posted:
+            flash(
+                f"Attendance already marked for {selected_session}.",
+                "error",
+            )
+            return redirect(
+                url_for(
+                    "mark_attendance",
+                    workshop_key=workshop_key,
+                    date=selected_date,
+                    session=selected_session,
+                )
+            )
+
         posted_at = datetime.now().isoformat(timespec="seconds")
         submitted_status = {}
         for roll in students:
             status = request.form.get(f"status_{roll}", "Absent")
             submitted_status[roll] = "Present" if status == "Present" else "Absent"
 
-        existing_records = load_attendance_records()
-        # Remove previous entries for this workshop and date to prevent duplicates.
-        filtered_records = [
-            record
-            for record in existing_records
-            if not (
-                record.get("workshop_type") == workshop_key
-                and record.get("date") == current_date
-                and (record.get("session") or "FN") == selected_session
-            )
-        ]
+        filtered_records = list(existing_records)
 
         for roll, status in submitted_status.items():
             filtered_records.append(
                 {
                     "roll_number": roll,
                     "status": status,
-                    "date": current_date,
+                    "date": selected_date,
                     "session": selected_session,
                     "posted_at": posted_at,
                     "workshop_type": workshop_key,
@@ -775,7 +795,7 @@ def mark_attendance(workshop_key):
         flash(
             (
                 f"Attendance saved for {WORKSHOP_LABELS[workshop_key]} on "
-                f"{current_date} ({selected_session})."
+                f"{selected_date} ({selected_session})."
             ),
             "success",
         )
@@ -783,6 +803,7 @@ def mark_attendance(workshop_key):
             url_for(
                 "mark_attendance",
                 workshop_key=workshop_key,
+                date=selected_date,
                 session=selected_session,
             )
         )
@@ -792,7 +813,7 @@ def mark_attendance(workshop_key):
         record_session = record.get("session") or "FN"
         if (
             record.get("workshop_type") == workshop_key
-            and record.get("date") == current_date
+            and record.get("date") == selected_date
             and record_session == selected_session
         ):
             existing_status_map[record.get("roll_number")] = record.get("status")
@@ -803,6 +824,7 @@ def mark_attendance(workshop_key):
         workshop_label=WORKSHOP_LABELS[workshop_key],
         students=students,
         existing_status_map=existing_status_map,
+        selected_date=selected_date,
         selected_session=selected_session,
         session_options=SESSION_OPTIONS,
         read_only=False,
@@ -817,14 +839,25 @@ def add_student_faculty(workshop_key):
         return redirect(url_for("faculty_dashboard"))
 
     roll_number = request.form.get("roll_number", "")
+    selected_date = request.form.get("date", date.today().isoformat())
     selected_session = request.form.get("session", "FN")
     if selected_session not in SESSION_OPTIONS:
         selected_session = "FN"
 
+    try:
+        datetime.strptime(selected_date, "%Y-%m-%d")
+    except ValueError:
+        selected_date = date.today().isoformat()
+
     ok, message = add_student_to_workshop(workshop_key, roll_number)
     flash(message, "success" if ok else "error")
     return redirect(
-        url_for("mark_attendance", workshop_key=workshop_key, session=selected_session)
+        url_for(
+            "mark_attendance",
+            workshop_key=workshop_key,
+            date=selected_date,
+            session=selected_session,
+        )
     )
 
 

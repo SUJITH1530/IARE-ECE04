@@ -170,11 +170,13 @@
             margin-bottom: 6px;
         }
 
-        .session-panel select {
+        .session-panel select,
+        .session-panel input[type="date"] {
             padding: 8px 10px;
             border-radius: 8px;
             border: 1px solid var(--border);
             min-width: 160px;
+            margin-bottom: 8px;
         }
 
         .add-panel {
@@ -260,6 +262,9 @@
             {% else %}
                 <div class="session-panel">
                     <form method="get" action="{{ url_for('mark_attendance', workshop_key=workshop_key) }}">
+                        <label for="date">Date</label>
+                        <input id="date" name="date" type="date" value="{{ selected_date }}" onchange="this.form.submit()">
+
                         <label for="session">Session</label>
                         <select id="session" name="session" onchange="this.form.submit()">
                             {% for option in session_options %}
@@ -274,6 +279,7 @@
                         <div>
                             <label for="roll_number_new">Add Roll Number (Late Entry)</label>
                             <input id="roll_number_new" name="roll_number" type="text" placeholder="e.g. 22A91A0409" required>
+                            <input type="hidden" name="date" value="{{ selected_date }}">
                             <input type="hidden" name="session" value="{{ selected_session }}">
                         </div>
                         <div>
@@ -283,6 +289,7 @@
                 </div>
 
                 <form method="post">
+                    <input type="hidden" name="date" value="{{ selected_date }}">
                     <input type="hidden" name="session" value="{{ selected_session }}">
 
                     <div class="bulk-actions">
