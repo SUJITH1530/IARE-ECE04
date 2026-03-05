@@ -5,6 +5,12 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
+    disks:
+      - name: ece-attendance-disk
+        mountPath: /var/data
+        sizeGB: 1
     envVars:
       - key: SECRET_KEY
         generateValue: true
+      - key: ATTENDANCE_STORAGE_DIR
+        value: /var/data

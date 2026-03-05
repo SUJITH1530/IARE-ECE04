@@ -1,6 +1,7 @@
 import csv
 import io
 import os
+import shutil
 import sqlite3
 from datetime import date, datetime
 from functools import wraps
@@ -22,10 +23,17 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "ece_workshop_secret_key_change_me")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STUDENTS_DIR = os.path.join(BASE_DIR, "students")
-ATTENDANCE_DIR = os.path.join(BASE_DIR, "attendance")
+SOURCE_STUDENTS_DIR = os.path.join(BASE_DIR, "students")
+STORAGE_ROOT = os.environ.get("ATTENDANCE_STORAGE_DIR") or os.environ.get("RENDER_DISK_PATH")
+if STORAGE_ROOT:
+    STORAGE_ROOT = os.path.join(STORAGE_ROOT, "ece_attendance")
+else:
+    STORAGE_ROOT = BASE_DIR
+
+STUDENTS_DIR = os.path.join(STORAGE_ROOT, "students")
+ATTENDANCE_DIR = os.path.join(STORAGE_ROOT, "attendance")
 ATTENDANCE_FILE = os.path.join(ATTENDANCE_DIR, "attendance_records.csv")
-DATABASE_PATH = os.path.join(BASE_DIR, "attendance.db")
+DATABASE_PATH = os.path.join(STORAGE_ROOT, "attendance.db")
 SESSION_OPTIONS = ("FN", "AN")
 
 USERS = {
@@ -57,6 +65,15 @@ SAMPLE_ROLL_NUMBERS = {
 def ensure_directories_and_files() -> None:
     os.makedirs(STUDENTS_DIR, exist_ok=True)
     os.makedirs(ATTENDANCE_DIR, exist_ok=True)
+
+    # Seed persistent student files from repo defaults on first run.
+    for file_name in WORKSHOP_FILES.values():
+        target_path = os.path.join(STUDENTS_DIR, file_name)
+        source_path = os.path.join(SOURCE_STUDENTS_DIR, file_name)
+        if os.path.exists(target_path):
+            continue
+        if os.path.exists(source_path) and os.path.abspath(source_path) != os.path.abspath(target_path):
+            shutil.copyfile(source_path, target_path)
 
 
 def get_db_connection() -> sqlite3.Connection:
@@ -298,6 +315,22 @@ def save_attendance_records(records: list) -> None:
     finally:
         conn.close()
 
+    # Store a CSV snapshot for portability and optional recovery.
+    with open(ATTENDANCE_FILE, "w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(["roll_number", "status", "date", "session", "workshop_type", "posted_at"])
+        for record in records:
+            writer.writerow(
+                [
+                    record.get("roll_number", ""),
+                    record.get("status", "Absent"),
+                    record.get("date", ""),
+                    record.get("session", "FN"),
+                    record.get("workshop_type", ""),
+                    record.get("posted_at") or "",
+                ]
+            )
+
 
 def _pdf_escape_text(value: str) -> str:
     safe_value = (value or "").replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
@@ -312,31 +345,45 @@ def build_simple_attendance_pdf(
     present_count: int,
     absent_count: int,
 ) -> bytes:
-    # Keep line counts conservative for A4/Letter-like page height.
-    max_data_lines_per_page = 36
-    row_lines = [
-        f"{index + 1:>3}. {row['roll_number']:<16} {row['status']}"
-        for index, row in enumerate(report_rows)
-    ]
+    def draw_text(commands: list, x: float, y: float, text: str, font: str, size: int) -> None:
+        commands.append(
+            (
+                f"BT /{font} {size} Tf 1 0 0 1 {x:.2f} {y:.2f} Tm "
+                f"({_pdf_escape_text(text)}) Tj ET"
+            )
+        )
 
-    header_lines = [
-        "ECE Attendance Report",
-        f"Workshop: {workshop_label}",
-        f"Date: {selected_date}    Session: {selected_session}",
-        f"Present: {present_count}    Absent: {absent_count}",
-        "",
-        "S.No Roll Number       Status",
-        "--------------------------------",
-    ]
+    def center_x(text: str, size: int, page_width: float = 612.0) -> float:
+        estimated_width = len(text) * size * 0.5
+        return max(30.0, (page_width - estimated_width) / 2.0)
+
+    def format_date_for_header(value: str) -> str:
+        try:
+            return datetime.strptime(value, "%Y-%m-%d").strftime("%d-%m-%Y")
+        except ValueError:
+            return value
+
+    title_upper = workshop_label.upper()
+    if "VLSI" in title_upper:
+        workshop_title = "VLSI Attendance Summary"
+    elif "EMBEDDED" in title_upper:
+        workshop_title = "Embedded Systems Attendance Summary"
+    else:
+        workshop_title = f"{workshop_label} Attendance Summary"
+
+    page_width = 612.0
+    left_margin = 36.0
+    table_width = page_width - (left_margin * 2)
+    row_height = 20.0
+    table_start_y = 560.0
+    min_bottom_y = 60.0
+    rows_per_page = max(1, int((table_start_y - min_bottom_y) // row_height) - 1)
 
     pages = []
-    for start in range(0, len(row_lines), max_data_lines_per_page):
-        page_lines = list(header_lines)
-        page_lines.extend(row_lines[start : start + max_data_lines_per_page])
-        pages.append(page_lines)
-
+    for start in range(0, len(report_rows), rows_per_page):
+        pages.append(report_rows[start : start + rows_per_page])
     if not pages:
-        pages = [header_lines + ["No students found for this report."]]
+        pages = [[]]
 
     objects = []
 
@@ -348,18 +395,108 @@ def build_simple_attendance_pdf(
     pages_obj = add_object(b"<< /Type /Pages /Kids [] /Count 0 >>")
 
     page_object_numbers = []
-    content_object_numbers = []
 
-    for page_lines in pages:
-        content_lines = ["BT", "/F1 11 Tf", "50 770 Td"]
-        for idx, line in enumerate(page_lines):
-            escaped_line = _pdf_escape_text(line)
-            if idx == 0:
-                content_lines.append(f"({escaped_line}) Tj")
+    for page_index, page_rows in enumerate(pages, start=1):
+        content_lines = []
+
+        content_lines.append("0.7 w")
+        content_lines.append("0 0 0 RG")
+        content_lines.append("24 24 564 744 re S")
+
+        content_lines.append("0 0 0 rg")
+        draw_text(
+            content_lines,
+            center_x("Institute of Aeronautical Engineering", 16),
+            748,
+            "Institute of Aeronautical Engineering",
+            "F2",
+            16,
+        )
+        draw_text(
+            content_lines,
+            center_x("Electronics and Communication Engineering", 12),
+            728,
+            "Electronics and Communication Engineering",
+            "F1",
+            12,
+        )
+        draw_text(
+            content_lines,
+            center_x(workshop_title, 12),
+            706,
+            workshop_title,
+            "F2",
+            12,
+        )
+
+        date_text = f"Date: {format_date_for_header(selected_date)}"
+        session_text = f"Session: {selected_session}"
+        draw_text(content_lines, center_x(date_text, 10), 688, date_text, "F1", 10)
+        draw_text(content_lines, page_width - 160, 688, session_text, "F1", 10)
+
+        content_lines.append("0 0 0 RG")
+        content_lines.append("24 670 m 588 670 l S")
+        draw_text(
+            content_lines,
+            center_x("Complete Report (Present & Absent)", 10),
+            640,
+            "Complete Report (Present & Absent)",
+            "F2",
+            10,
+        )
+
+        summary_text = f"Present: {present_count}      Absent: {absent_count}"
+        draw_text(content_lines, center_x(summary_text, 10), 622, summary_text, "F1", 10)
+
+        header_y = table_start_y
+        content_lines.append("0.20 0.29 0.41 rg")
+        content_lines.append(f"{left_margin:.2f} {header_y:.2f} {table_width:.2f} {row_height:.2f} re f")
+
+        content_lines.append("1 1 1 rg")
+        draw_text(content_lines, left_margin + 8, header_y + 6, "S.No", "F2", 10)
+        draw_text(content_lines, left_margin + 70, header_y + 6, "Roll No", "F2", 10)
+        draw_text(content_lines, left_margin + 370, header_y + 6, "Status", "F2", 10)
+
+        current_y = header_y - row_height
+        for idx, row in enumerate(page_rows):
+            row_number = ((page_index - 1) * rows_per_page) + idx + 1
+            status = row.get("status", "Absent")
+            roll_number = row.get("roll_number", "")
+
+            if idx % 2 == 0:
+                content_lines.append("0.96 0.96 0.96 rg")
             else:
-                content_lines.append("0 -18 Td")
-                content_lines.append(f"({escaped_line}) Tj")
-        content_lines.append("ET")
+                content_lines.append("0.92 0.92 0.92 rg")
+            content_lines.append(f"{left_margin:.2f} {current_y:.2f} {table_width:.2f} {row_height:.2f} re f")
+
+            content_lines.append("0 0 0 rg")
+            draw_text(content_lines, left_margin + 8, current_y + 6, str(row_number), "F1", 10)
+            draw_text(content_lines, left_margin + 70, current_y + 6, roll_number, "F1", 10)
+
+            if status == "Present":
+                content_lines.append("0.10 0.45 0.20 rg")
+            else:
+                content_lines.append("0.65 0.13 0.13 rg")
+            draw_text(content_lines, left_margin + 370, current_y + 6, status, "F2", 10)
+
+            current_y -= row_height
+
+        table_height = row_height * (len(page_rows) + 1)
+        table_bottom = header_y - table_height + row_height
+        content_lines.append("0 0 0 RG")
+        content_lines.append("0.5 w")
+        content_lines.append(
+            f"{left_margin:.2f} {table_bottom:.2f} {table_width:.2f} {table_height:.2f} re S"
+        )
+        content_lines.append(
+            f"{left_margin + 60:.2f} {table_bottom:.2f} m {left_margin + 60:.2f} {header_y + row_height:.2f} l S"
+        )
+        content_lines.append(
+            f"{left_margin + 350:.2f} {table_bottom:.2f} m {left_margin + 350:.2f} {header_y + row_height:.2f} l S"
+        )
+
+        draw_text(content_lines, page_width - 125, 34, f"Page {page_index}", "F1", 9)
+
         content_stream = "\n".join(content_lines).encode("latin-1", "replace")
 
         content_obj = add_object(
@@ -373,19 +510,23 @@ def build_simple_attendance_pdf(
             b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
             b"/Resources << /Font << /F1 "
             + str(0).encode("ascii")
+            + b" 0 R /F2 "
+            + str(0).encode("ascii")
             + b" 0 R >> >> /Contents "
             + str(content_obj).encode("ascii")
             + b" 0 R >>"
         )
-        content_object_numbers.append(content_obj)
         page_object_numbers.append(page_obj)
 
     font_obj = add_object(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    bold_font_obj = add_object(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>")
 
-    # Replace placeholder font object number in page objects.
     for page_obj_num in page_object_numbers:
         original = objects[page_obj_num - 1]
-        objects[page_obj_num - 1] = original.replace(b"/F1 0 0 R", f"/F1 {font_obj} 0 R".encode("ascii"))
+        objects[page_obj_num - 1] = (
+            original.replace(b"/F1 0 0 R", f"/F1 {font_obj} 0 R".encode("ascii"))
+            .replace(b"/F2 0 0 R", f"/F2 {bold_font_obj} 0 R".encode("ascii"))
+        )
 
     kids = b"[" + b" ".join(f"{num} 0 R".encode("ascii") for num in page_object_numbers) + b"]"
     objects[pages_obj - 1] = (
