@@ -73,6 +73,34 @@
             margin-top: 4px;
         }
 
+        .export-form {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: end;
+        }
+
+        .export-field label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .export-field input,
+        .export-field select {
+            padding: 9px 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            min-width: 170px;
+            font-size: 0.95rem;
+        }
+
+        .export-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
         .btn {
             display: inline-block;
             text-decoration: none;
@@ -162,6 +190,41 @@
                     <a class="btn btn-primary" href="{{ url_for('not_in_workshop_students') }}">View List</a>
                 </div>
             </div>
+        </div>
+
+        <div class="panel">
+            <h2>Export Attendance PDF</h2>
+            <form class="export-form" method="get">
+                <div class="export-field">
+                    <label for="date">Date</label>
+                    <input id="date" name="date" type="date" value="{{ request.args.get('date', '') }}" required>
+                </div>
+
+                <div class="export-field">
+                    <label for="workshop">Workshop</label>
+                    <select id="workshop" name="workshop">
+                        <option value="vlsi">VLSI Workshop</option>
+                        <option value="embedded">Embedded Systems Workshop</option>
+                    </select>
+                </div>
+
+                <div class="export-field">
+                    <label for="session">Session</label>
+                    <select id="session" name="session">
+                        <option value="FN">FN</option>
+                        <option value="AN">AN</option>
+                    </select>
+                </div>
+
+                <div class="export-actions">
+                    <button class="btn btn-primary" type="submit" formaction="{{ url_for('export_absentees_report_pdf') }}">
+                        Export Absentees Report PDF
+                    </button>
+                    <button class="btn btn-primary" type="submit" formaction="{{ url_for('export_presentees_report_pdf') }}">
+                        Export Presentees Report PDF
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </body>

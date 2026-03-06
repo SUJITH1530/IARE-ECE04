@@ -33,6 +33,7 @@ else:
 STUDENTS_DIR = os.path.join(STORAGE_ROOT, "students")
 ATTENDANCE_DIR = os.path.join(STORAGE_ROOT, "attendance")
 ATTENDANCE_FILE = os.path.join(ATTENDANCE_DIR, "attendance_records.csv")
+LEGACY_ATTENDANCE_FILE = os.path.join(BASE_DIR, "attendance", "attendance_records.csv")
 DATABASE_PATH = os.path.join(STORAGE_ROOT, "attendance.db")
 SESSION_OPTIONS = ("FN", "AN")
 
@@ -112,18 +113,25 @@ def ensure_database() -> None:
 
 
 def migrate_csv_attendance_to_db_if_needed() -> None:
-    if not os.path.exists(ATTENDANCE_FILE):
-        return
-
     conn = get_db_connection()
     try:
         current_count = conn.execute("SELECT COUNT(*) FROM attendance_records").fetchone()[0]
         if current_count > 0:
             return
 
-        with open(ATTENDANCE_FILE, "r", newline="", encoding="utf-8") as file:
-            reader = csv.DictReader(file)
-            rows = list(reader)
+        csv_candidates = [ATTENDANCE_FILE, LEGACY_ATTENDANCE_FILE]
+        rows = []
+        for csv_path in csv_candidates:
+            if not os.path.exists(csv_path):
+                continue
+            with open(csv_path, "r", newline="", encoding="utf-8") as file:
+                reader = csv.DictReader(file)
+                rows = list(reader)
+            if rows:
+                break
+
+        if not rows:
+            return
 
         for row in rows:
             roll_number = row.get("roll_number", "").strip()
@@ -179,6 +187,23 @@ def role_required(expected_role):
     return decorator
 
 
+def roles_required(*expected_roles):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            if "username" not in session:
+                flash("Please login first.", "error")
+                return redirect(url_for("login"))
+            if session.get("role") not in expected_roles:
+                flash("You do not have access to this page.", "error")
+                return redirect(url_for("login"))
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
 def save_uploaded_student_file(file_storage, workshop_key: str) -> None:
     filename = WORKSHOP_FILES[workshop_key]
     target_path = os.path.join(STUDENTS_DIR, filename)
@@ -189,13 +214,22 @@ def save_uploaded_student_file(file_storage, workshop_key: str) -> None:
 
     roll_numbers = read_roll_numbers_from_csv(temp_path)
 
-    with open(target_path, "w", newline="", encoding="utf-8") as file:
+    try:
+        _write_students_csv(target_path, roll_numbers)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+def _write_students_csv(file_path: str, roll_numbers: list[str]) -> None:
+    # Write to a temp file and atomically replace to avoid partially written CSV files.
+    temp_path = f"{file_path}.tmp"
+    with open(temp_path, "w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
         writer.writerow(["roll_number"])
         for roll in roll_numbers:
             writer.writerow([roll])
-
-    os.remove(temp_path)
+    os.replace(temp_path, file_path)
 
 
 def read_roll_numbers_from_csv(path: str) -> list:
@@ -228,7 +262,13 @@ def read_roll_numbers_from_csv(path: str) -> list:
 def get_workshop_students(workshop_key: str) -> list:
     file_name = WORKSHOP_FILES[workshop_key]
     file_path = os.path.join(STUDENTS_DIR, file_name)
-    return read_roll_numbers_from_csv(file_path)
+    roll_numbers = read_roll_numbers_from_csv(file_path)
+    if roll_numbers:
+        return roll_numbers
+
+    # Fall back to packaged defaults if persistent storage file is missing/empty.
+    source_path = os.path.join(SOURCE_STUDENTS_DIR, file_name)
+    return read_roll_numbers_from_csv(source_path)
 
 
 def build_users() -> dict:
@@ -258,11 +298,7 @@ def add_student_to_workshop(workshop_key: str, roll_number: str) -> tuple[bool, 
 
     students.append(clean_roll)
     file_path = os.path.join(STUDENTS_DIR, WORKSHOP_FILES[workshop_key])
-    with open(file_path, "w", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-        writer.writerow(["roll_number"])
-        for roll in students:
-            writer.writerow([roll])
+    _write_students_csv(file_path, students)
 
     return True, f"{clean_roll} added to {WORKSHOP_LABELS[workshop_key]}."
 
@@ -276,19 +312,62 @@ def load_attendance_records() -> list:
             FROM attendance_records
             """
         ).fetchall()
-        return [
-            {
-                "roll_number": row["roll_number"],
-                "status": row["status"],
-                "date": row["date"],
-                "session": row["session"],
-                "posted_at": row["posted_at"],
-                "workshop_type": row["workshop_type"],
-            }
-            for row in rows
-        ]
     finally:
         conn.close()
+
+    if not rows:
+        # Re-seed from CSV snapshot if DB exists but has no rows.
+        migrate_csv_attendance_to_db_if_needed()
+        conn = get_db_connection()
+        try:
+            rows = conn.execute(
+                """
+                SELECT roll_number, status, date, session, posted_at, workshop_type
+                FROM attendance_records
+                """
+            ).fetchall()
+        finally:
+            conn.close()
+
+    return [
+        {
+            "roll_number": row["roll_number"],
+            "status": row["status"],
+            "date": row["date"],
+            "session": row["session"],
+            "posted_at": row["posted_at"],
+            "workshop_type": row["workshop_type"],
+        }
+        for row in rows
+    ]
+
+
+def build_report_rows(selected_date: str, workshop_key: str, selected_session: str) -> tuple[list, int, int]:
+    records = [
+        record
+        for record in load_attendance_records()
+        if (
+            record.get("date") == selected_date
+            and record.get("workshop_type") == workshop_key
+            and (record.get("session") or "FN") == selected_session
+        )
+    ]
+
+    status_map = {record["roll_number"]: record["status"] for record in records}
+    all_students = get_workshop_students(workshop_key)
+
+    report_rows = []
+    present_count = 0
+    absent_count = 0
+    for roll in all_students:
+        status = status_map.get(roll, "Absent")
+        if status == "Present":
+            present_count += 1
+        else:
+            absent_count += 1
+        report_rows.append({"roll_number": roll, "status": status})
+
+    return report_rows, present_count, absent_count
 
 
 def save_attendance_records(records: list) -> None:
@@ -344,6 +423,7 @@ def build_simple_attendance_pdf(
     report_rows: list,
     present_count: int,
     absent_count: int,
+    report_title: str = "Complete Report (Present & Absent)",
 ) -> bytes:
     def draw_text(commands: list, x: float, y: float, text: str, font: str, size: int) -> None:
         commands.append(
@@ -438,9 +518,9 @@ def build_simple_attendance_pdf(
         content_lines.append("24 670 m 588 670 l S")
         draw_text(
             content_lines,
-            center_x("Complete Report (Present & Absent)", 10),
+            center_x(report_title, 10),
             640,
-            "Complete Report (Present & Absent)",
+            report_title,
             "F2",
             10,
         )
@@ -658,6 +738,8 @@ def student_dashboard():
     attendance_percentage = None
     present_classes = 0
     total_classes = 0
+    absent_classes = 0
+    attendance_timeline = []
 
     if selected_workshop_key:
         student_records = [
@@ -672,8 +754,49 @@ def student_dashboard():
         present_classes = sum(
             1 for record in student_records if record.get("status") == "Present"
         )
+        absent_classes = total_classes - present_classes
         if total_classes > 0:
             attendance_percentage = round((present_classes / total_classes) * 100, 2)
+
+        def _timeline_sort_key(item: dict) -> tuple:
+            raw_date = item.get("date") or ""
+            try:
+                parsed_date = datetime.strptime(raw_date, "%Y-%m-%d")
+            except ValueError:
+                parsed_date = datetime.min
+            session_rank = 1 if (item.get("session") or "FN") == "AN" else 0
+            return parsed_date, session_rank
+
+        for record in sorted(student_records, key=_timeline_sort_key, reverse=True):
+            raw_date = record.get("date") or ""
+            try:
+                parsed = datetime.strptime(raw_date, "%Y-%m-%d")
+                date_label = parsed.strftime("%d %b %Y")
+                weekday_label = parsed.strftime("%a")
+            except ValueError:
+                date_label = raw_date
+                weekday_label = "-"
+
+            posted_at_label = "N/A"
+            raw_posted_at = record.get("posted_at")
+            if raw_posted_at:
+                try:
+                    posted_at_label = datetime.fromisoformat(raw_posted_at).strftime(
+                        "%d %b %Y %I:%M %p"
+                    )
+                except (ValueError, TypeError):
+                    posted_at_label = str(raw_posted_at)
+
+            attendance_timeline.append(
+                {
+                    "date": raw_date,
+                    "date_label": date_label,
+                    "weekday": weekday_label,
+                    "session": record.get("session") or "FN",
+                    "status": record.get("status") or "Absent",
+                    "posted_at_label": posted_at_label,
+                }
+            )
 
         today_records = [
             record
@@ -710,7 +833,9 @@ def student_dashboard():
         posted_at_display=posted_at_display,
         attendance_percentage=attendance_percentage,
         present_classes=present_classes,
+        absent_classes=absent_classes,
         total_classes=total_classes,
+        attendance_timeline=attendance_timeline,
     )
 
 
@@ -886,29 +1011,11 @@ def attendance_report():
     if selected_session not in SESSION_OPTIONS:
         selected_session = "FN"
 
-    records = [
-        record
-        for record in load_attendance_records()
-        if (
-            record.get("date") == selected_date
-            and record.get("workshop_type") == workshop_key
-            and (record.get("session") or "FN") == selected_session
-        )
-    ]
-
-    status_map = {record["roll_number"]: record["status"] for record in records}
-    all_students = get_workshop_students(workshop_key)
-
-    report_rows = []
-    present_count = 0
-    absent_count = 0
-    for roll in all_students:
-        status = status_map.get(roll, "Absent")
-        if status == "Present":
-            present_count += 1
-        else:
-            absent_count += 1
-        report_rows.append({"roll_number": roll, "status": status})
+    report_rows, present_count, absent_count = build_report_rows(
+        selected_date,
+        workshop_key,
+        selected_session,
+    )
 
     return render_template(
         "report.html",
@@ -976,29 +1083,11 @@ def export_report_pdf():
     if selected_session not in SESSION_OPTIONS:
         selected_session = "FN"
 
-    records = [
-        record
-        for record in load_attendance_records()
-        if (
-            record.get("date") == selected_date
-            and record.get("workshop_type") == workshop_key
-            and (record.get("session") or "FN") == selected_session
-        )
-    ]
-
-    status_map = {record["roll_number"]: record["status"] for record in records}
-    all_students = get_workshop_students(workshop_key)
-
-    report_rows = []
-    present_count = 0
-    absent_count = 0
-    for roll in all_students:
-        status = status_map.get(roll, "Absent")
-        if status == "Present":
-            present_count += 1
-        else:
-            absent_count += 1
-        report_rows.append({"roll_number": roll, "status": status})
+    report_rows, present_count, absent_count = build_report_rows(
+        selected_date,
+        workshop_key,
+        selected_session,
+    )
 
     pdf_bytes = build_simple_attendance_pdf(
         selected_date=selected_date,
@@ -1007,8 +1096,79 @@ def export_report_pdf():
         report_rows=report_rows,
         present_count=present_count,
         absent_count=absent_count,
+        report_title="Complete Report (Present & Absent)",
     )
     file_name = f"attendance_{workshop_key}_{selected_date}_{selected_session}.pdf"
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={file_name}"},
+    )
+
+
+@app.route("/attendance/export-absentees-pdf", methods=["GET"])
+@roles_required("faculty", "hod")
+def export_absentees_report_pdf():
+    selected_date = request.args.get("date", date.today().isoformat())
+    workshop_key = request.args.get("workshop", "vlsi")
+    selected_session = request.args.get("session", "FN")
+    if workshop_key not in {"vlsi", "embedded"}:
+        workshop_key = "vlsi"
+    if selected_session not in SESSION_OPTIONS:
+        selected_session = "FN"
+
+    report_rows, _, absent_count = build_report_rows(
+        selected_date,
+        workshop_key,
+        selected_session,
+    )
+    absentees_rows = [row for row in report_rows if row.get("status") == "Absent"]
+
+    pdf_bytes = build_simple_attendance_pdf(
+        selected_date=selected_date,
+        workshop_label=WORKSHOP_LABELS[workshop_key],
+        selected_session=selected_session,
+        report_rows=absentees_rows,
+        present_count=0,
+        absent_count=absent_count,
+        report_title="Absentees Report",
+    )
+    file_name = f"absentees_{workshop_key}_{selected_date}_{selected_session}.pdf"
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={file_name}"},
+    )
+
+
+@app.route("/attendance/export-presentees-pdf", methods=["GET"])
+@roles_required("faculty", "hod")
+def export_presentees_report_pdf():
+    selected_date = request.args.get("date", date.today().isoformat())
+    workshop_key = request.args.get("workshop", "vlsi")
+    selected_session = request.args.get("session", "FN")
+    if workshop_key not in {"vlsi", "embedded"}:
+        workshop_key = "vlsi"
+    if selected_session not in SESSION_OPTIONS:
+        selected_session = "FN"
+
+    report_rows, present_count, _ = build_report_rows(
+        selected_date,
+        workshop_key,
+        selected_session,
+    )
+    presentees_rows = [row for row in report_rows if row.get("status") == "Present"]
+
+    pdf_bytes = build_simple_attendance_pdf(
+        selected_date=selected_date,
+        workshop_label=WORKSHOP_LABELS[workshop_key],
+        selected_session=selected_session,
+        report_rows=presentees_rows,
+        present_count=present_count,
+        absent_count=0,
+        report_title="Presentees Report",
+    )
+    file_name = f"presentees_{workshop_key}_{selected_date}_{selected_session}.pdf"
     return Response(
         pdf_bytes,
         mimetype="application/pdf",
