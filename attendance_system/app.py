@@ -705,8 +705,7 @@ def role_required(expected_role):
                 flash("Please login first.", "error")
                 return redirect(url_for("login"))
             if session.get("role") != expected_role:
-                flash("You do not have access to this page.", "error")
-                return redirect(url_for("login"))
+                return render_access_denied()
             return func(*args, **kwargs)
 
         return wrapper
@@ -722,8 +721,7 @@ def roles_required(*expected_roles):
                 flash("Please login first.", "error")
                 return redirect(url_for("login"))
             if session.get("role") not in expected_roles:
-                flash("You do not have access to this page.", "error")
-                return redirect(url_for("login"))
+                return render_access_denied()
             return func(*args, **kwargs)
 
         return wrapper
