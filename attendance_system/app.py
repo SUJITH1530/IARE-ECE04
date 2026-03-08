@@ -6,6 +6,7 @@ import shutil
 import sqlite3
 from datetime import date, datetime, timedelta
 from functools import wraps
+from urllib.parse import urlencode
 
 from flask import (
     Response,
@@ -1323,6 +1324,18 @@ def redirect_current_user_dashboard():
     return redirect_role_dashboard(session.get("role"))
 
 
+def redirect_home_action(action: str, **params):
+    query = {"action": action}
+    for key, value in params.items():
+        if value is not None:
+            query[key] = value
+    return redirect(f"/home?{urlencode(query)}")
+
+
+def render_access_denied():
+    return render_template("access_denied.html"), 403
+
+
 def redirect_editor_dashboard():
     return redirect_role_dashboard("editor")
 
@@ -1421,9 +1434,19 @@ def hod_dashboard():
 def editor_dashboard_home():
     role = session.get("role")
     action = (request.args.get("action") or "").strip().lower()
-    expected_action = dashboard_action_for_role(role)
-    if action != expected_action:
-        return redirect_role_dashboard(role)
+    allowed_actions = {
+        "hod": {"hod/dashboard", "hod/report"},
+        "editor": {"edit/dashboard"},
+        "faculty": {"faculty/dashboard"},
+        "student": {"student/dashboard"},
+    }
+    role_allowed_actions = allowed_actions.get(role, set())
+
+    if action not in role_allowed_actions:
+        return render_access_denied()
+
+    if action == "hod/report":
+        return _render_attendance_report_page()
 
     if role in {"hod", "editor"}:
         return hod_dashboard()
@@ -1859,6 +1882,18 @@ def attendance_report():
     selected_date = request.args.get("date", date.today().isoformat())
     workshop_key = request.args.get("workshop", "vlsi")
     selected_session = request.args.get("session", "FN")
+    return redirect_home_action(
+        "hod/report",
+        date=selected_date,
+        workshop=workshop_key,
+        session=selected_session,
+    )
+
+
+def _render_attendance_report_page():
+    selected_date = request.args.get("date", date.today().isoformat())
+    workshop_key = request.args.get("workshop", "vlsi")
+    selected_session = request.args.get("session", "FN")
     if workshop_key not in {"vlsi", "embedded"}:
         workshop_key = "vlsi"
     if selected_session not in SESSION_OPTIONS:
@@ -2088,13 +2123,11 @@ def update_attendance_record():
         ),
     )
     flash(f"Attendance updated for {roll_number}.", "success")
-    return redirect(
-        url_for(
-            "attendance_report",
-            date=selected_date,
-            workshop=workshop_key,
-            session=selected_session,
-        )
+    return redirect_home_action(
+        "hod/report",
+        date=selected_date,
+        workshop=workshop_key,
+        session=selected_session,
     )
 
 
@@ -2136,13 +2169,11 @@ def delete_attendance_record():
     else:
         flash("No matching attendance record found to delete.", "error")
 
-    return redirect(
-        url_for(
-            "attendance_report",
-            date=selected_date,
-            workshop=workshop_key,
-            session=selected_session,
-        )
+    return redirect_home_action(
+        "hod/report",
+        date=selected_date,
+        workshop=workshop_key,
+        session=selected_session,
     )
 
 
@@ -2189,13 +2220,11 @@ def delete_attendance_batch():
     else:
         flash("No attendance records found for the selected batch.", "error")
 
-    return redirect(
-        url_for(
-            "attendance_report",
-            date=selected_date,
-            workshop=workshop_key,
-            session=selected_session,
-        )
+    return redirect_home_action(
+        "hod/report",
+        date=selected_date,
+        workshop=workshop_key,
+        session=selected_session,
     )
 
 

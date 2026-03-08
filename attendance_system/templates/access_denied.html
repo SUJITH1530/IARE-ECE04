@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Access Denied</title>
+    <style>
+        :root {
+            --bg: #eef1f4;
+            --panel: #ffffff;
+            --danger: #d7344a;
+            --danger-dark: #b71e34;
+            --text: #1f2a37;
+            --muted: #667085;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            background: var(--bg);
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            color: var(--text);
+        }
+
+        .card {
+            width: min(760px, 100%);
+            background: var(--panel);
+            border-radius: 12px;
+            border: 1px solid #d5dbe3;
+            padding: 28px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+        }
+
+        .alert {
+            display: flex;
+            gap: 14px;
+            align-items: center;
+            background: linear-gradient(180deg, var(--danger), var(--danger-dark));
+            color: #fff;
+            padding: 16px 18px;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+
+        .icon {
+            width: 22px;
+            height: 22px;
+            border: 3px solid #fff;
+            border-radius: 50%;
+            position: relative;
+            flex: 0 0 auto;
+        }
+
+        .icon::after {
+            content: "";
+            position: absolute;
+            top: 8px;
+            left: -2px;
+            width: 22px;
+            height: 3px;
+            background: #fff;
+            transform: rotate(45deg);
+        }
+
+        .title {
+            margin: 0 0 4px;
+            font-size: 1.05rem;
+        }
+
+        .text {
+            margin: 0;
+            font-size: 1.02rem;
+        }
+
+        .hint {
+            margin-top: 14px;
+            color: var(--muted);
+            font-size: 0.92rem;
+        }
+
+        .actions {
+            margin-top: 18px;
+        }
+
+        a {
+            text-decoration: none;
+            color: #0b63f6;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <section class="alert">
+            <span class="icon" aria-hidden="true"></span>
+            <div>
+                <h1 class="title">Warning!</h1>
+                <p class="text">You are not authorized to access this page or perform this action.</p>
+            </div>
+        </section>
+        <p class="hint">The URL action does not match your allowed role actions.</p>
+        <div class="actions">
+            <a href="{{ url_for('login') }}">Go to Login</a>
+        </div>
+    </main>
+</body>
+</html>

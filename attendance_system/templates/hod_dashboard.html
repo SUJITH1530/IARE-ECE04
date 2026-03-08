@@ -339,7 +339,7 @@
             </div>
             <div class="actions">
                 {% if not is_editor %}
-                <a class="btn btn-primary" href="{{ url_for('attendance_report') }}">View Attendance Reports</a>
+                <a class="btn btn-primary" href="/home?action=hod/report">View Attendance Reports</a>
                 {% endif %}
                 <a class="btn btn-muted" href="{{ url_for('logout') }}">Logout</a>
             </div>
