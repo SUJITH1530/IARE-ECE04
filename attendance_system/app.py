@@ -1,9 +1,10 @@
 import csv
 import io
 import os
+import re
 import shutil
 import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from functools import wraps
 
 from flask import (
@@ -17,10 +18,12 @@ from flask import (
     session,
     url_for,
 )
+from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "ece_workshop_secret_key_change_me")
+app.permanent_session_lifetime = timedelta(minutes=20)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SOURCE_STUDENTS_DIR = os.path.join(BASE_DIR, "students")
@@ -36,10 +39,25 @@ ATTENDANCE_FILE = os.path.join(ATTENDANCE_DIR, "attendance_records.csv")
 LEGACY_ATTENDANCE_FILE = os.path.join(BASE_DIR, "attendance", "attendance_records.csv")
 DATABASE_PATH = os.path.join(STORAGE_ROOT, "attendance.db")
 SESSION_OPTIONS = ("FN", "AN")
+LOCK_WINDOW_MINUTES = 15
+MAX_LOGIN_ATTEMPTS = 5
+LOW_ATTENDANCE_THRESHOLD = 75.0
 
-USERS = {
-    "ecehod": {"password": "ece@04", "role": "hod"},
-    "faculty": {"password": "iare@1234", "role": "faculty"},
+DEFAULT_STAFF_USERS = {
+    "ecehod": {
+        "password": "ece@04",
+        "role": "hod",
+        "email": "ecehod@example.com",
+        "security_question": "What is your department code?",
+        "security_answer": "ECE",
+    },
+    "faculty": {
+        "password": "iare@1234",
+        "role": "faculty",
+        "email": "faculty@example.com",
+        "security_question": "What is your department code?",
+        "security_answer": "ECE",
+    },
 }
 
 STUDENT_COMMON_PASSWORD = os.environ.get("STUDENT_COMMON_PASSWORD", "IARE@2026")
@@ -107,6 +125,71 @@ def ensure_database() -> None:
         if "posted_at" not in columns:
             conn.execute("ALTER TABLE attendance_records ADD COLUMN posted_at TEXT")
 
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL,
+                email TEXT,
+                security_question TEXT,
+                security_answer_hash TEXT,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS login_attempts (
+                username TEXT PRIMARY KEY,
+                failed_attempts INTEGER NOT NULL DEFAULT 0,
+                lock_until TEXT,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                actor TEXT NOT NULL,
+                action TEXT NOT NULL,
+                details TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
+        now_iso = datetime.now().isoformat(timespec="seconds")
+        for username, data in DEFAULT_STAFF_USERS.items():
+            existing = conn.execute(
+                "SELECT username FROM users WHERE username = ?",
+                (username,),
+            ).fetchone()
+            if existing:
+                continue
+            conn.execute(
+                """
+                INSERT INTO users
+                (username, password_hash, role, email, security_question, security_answer_hash, is_active, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+                """,
+                (
+                    username,
+                    generate_password_hash(data["password"]),
+                    data["role"],
+                    data.get("email"),
+                    data.get("security_question"),
+                    generate_password_hash(data.get("security_answer", "")),
+                    now_iso,
+                    now_iso,
+                ),
+            )
+
         conn.commit()
     finally:
         conn.close()
@@ -165,9 +248,445 @@ def migrate_csv_attendance_to_db_if_needed() -> None:
         conn.close()
 
 
+def normalize_username(value: str) -> str:
+    return (value or "").strip().lower()
+
+
+def get_staff_user(username: str):
+    normalized = normalize_username(username)
+    if not normalized:
+        return None
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT username, password_hash, role, email, security_question, security_answer_hash, is_active
+            FROM users
+            WHERE username = ?
+            """,
+            (normalized,),
+        ).fetchone()
+    finally:
+        conn.close()
+    return row
+
+
+def list_staff_users(role: str | None = None) -> list[dict]:
+    conn = get_db_connection()
+    try:
+        if role:
+            rows = conn.execute(
+                """
+                SELECT username, role, email, is_active, created_at
+                FROM users
+                WHERE role = ?
+                ORDER BY username
+                """,
+                (role,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT username, role, email, is_active, created_at
+                FROM users
+                ORDER BY role, username
+                """
+            ).fetchall()
+    finally:
+        conn.close()
+
+    return [dict(row) for row in rows]
+
+
+def create_faculty_user(username: str, password: str, email: str, security_answer: str) -> tuple[bool, str]:
+    normalized = normalize_username(username)
+    if not normalized or not re.fullmatch(r"[a-z0-9._-]{3,40}", normalized):
+        return False, "Faculty username must be 3-40 chars using letters, numbers, dot, underscore or hyphen."
+    if len(password) < 8:
+        return False, "Faculty password must be at least 8 characters."
+
+    conn = get_db_connection()
+    try:
+        existing = conn.execute("SELECT username FROM users WHERE username = ?", (normalized,)).fetchone()
+        if existing:
+            return False, "Faculty username already exists."
+        now_iso = datetime.now().isoformat(timespec="seconds")
+        conn.execute(
+            """
+            INSERT INTO users
+            (username, password_hash, role, email, security_question, security_answer_hash, is_active, created_at, updated_at)
+            VALUES (?, ?, 'faculty', ?, 'What is your department code?', ?, 1, ?, ?)
+            """,
+            (
+                normalized,
+                generate_password_hash(password),
+                email.strip() or None,
+                generate_password_hash((security_answer or "ECE").strip() or "ECE"),
+                now_iso,
+                now_iso,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return True, f"Faculty user {normalized} created."
+
+
+def update_staff_password(username: str, new_password: str) -> tuple[bool, str]:
+    normalized = normalize_username(username)
+    if len(new_password) < 8:
+        return False, "Password must be at least 8 characters."
+
+    conn = get_db_connection()
+    try:
+        now_iso = datetime.now().isoformat(timespec="seconds")
+        updated = conn.execute(
+            """
+            UPDATE users
+            SET password_hash = ?, updated_at = ?
+            WHERE username = ?
+            """,
+            (generate_password_hash(new_password), now_iso, normalized),
+        ).rowcount
+        conn.commit()
+    finally:
+        conn.close()
+
+    if updated:
+        return True, "Password updated successfully."
+    return False, "User not found."
+
+
+def remove_faculty_user(username: str) -> tuple[bool, str]:
+    normalized = normalize_username(username)
+    if normalized == "ecehod":
+        return False, "HOD account cannot be removed."
+
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT username, role FROM users WHERE username = ?",
+            (normalized,),
+        ).fetchone()
+        if not row:
+            return False, "Faculty user not found."
+        if row["role"] != "faculty":
+            return False, "Only faculty accounts can be removed from this action."
+        conn.execute("DELETE FROM users WHERE username = ?", (normalized,))
+        conn.commit()
+    finally:
+        conn.close()
+    return True, f"Faculty user {normalized} removed."
+
+
+def get_login_attempt_state(username: str) -> tuple[int, datetime | None]:
+    normalized = normalize_username(username)
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT failed_attempts, lock_until FROM login_attempts WHERE username = ?",
+            (normalized,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        return 0, None
+
+    lock_until = None
+    if row["lock_until"]:
+        try:
+            lock_until = datetime.fromisoformat(row["lock_until"])
+        except ValueError:
+            lock_until = None
+    return int(row["failed_attempts"] or 0), lock_until
+
+
+def clear_login_attempts(username: str) -> None:
+    normalized = normalize_username(username)
+    conn = get_db_connection()
+    try:
+        now_iso = datetime.now().isoformat(timespec="seconds")
+        conn.execute(
+            """
+            INSERT INTO login_attempts (username, failed_attempts, lock_until, updated_at)
+            VALUES (?, 0, NULL, ?)
+            ON CONFLICT(username) DO UPDATE SET
+                failed_attempts = 0,
+                lock_until = NULL,
+                updated_at = excluded.updated_at
+            """,
+            (normalized, now_iso),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def register_failed_attempt(username: str) -> tuple[int, datetime | None]:
+    normalized = normalize_username(username)
+    failed_attempts, _ = get_login_attempt_state(normalized)
+    failed_attempts += 1
+    lock_until = None
+    if failed_attempts >= MAX_LOGIN_ATTEMPTS:
+        lock_until = datetime.now() + timedelta(minutes=LOCK_WINDOW_MINUTES)
+
+    conn = get_db_connection()
+    try:
+        now_iso = datetime.now().isoformat(timespec="seconds")
+        conn.execute(
+            """
+            INSERT INTO login_attempts (username, failed_attempts, lock_until, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(username) DO UPDATE SET
+                failed_attempts = excluded.failed_attempts,
+                lock_until = excluded.lock_until,
+                updated_at = excluded.updated_at
+            """,
+            (normalized, failed_attempts, lock_until.isoformat(timespec="seconds") if lock_until else None, now_iso),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return failed_attempts, lock_until
+
+
+def add_audit_log(action: str, details: str = "", actor: str | None = None) -> None:
+    actor_name = actor or session.get("username") or "system"
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            "INSERT INTO audit_logs (actor, action, details, created_at) VALUES (?, ?, ?, ?)",
+            (
+                actor_name,
+                action,
+                details,
+                datetime.now().isoformat(timespec="seconds"),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_recent_audit_logs(limit: int = 25) -> list[dict]:
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT actor, action, details, created_at
+            FROM audit_logs
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
+
+
+def is_valid_roll_number(roll_number: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z0-9]{6,20}", (roll_number or "").strip()))
+
+
+def get_all_students_with_workshop() -> list[dict]:
+    rows = []
+    for workshop_key in WORKSHOP_FILES:
+        for roll in get_workshop_students(workshop_key):
+            rows.append(
+                {
+                    "roll_number": roll,
+                    "workshop": workshop_key,
+                    "workshop_label": WORKSHOP_LABELS[workshop_key],
+                }
+            )
+    rows.sort(key=lambda item: (item["workshop"], item["roll_number"]))
+    return rows
+
+
+def remove_student_from_workshop(workshop_key: str, roll_number: str) -> tuple[bool, str]:
+    if workshop_key not in WORKSHOP_FILES:
+        return False, "Invalid domain selected."
+    clean_roll = (roll_number or "").strip().upper()
+    students = get_workshop_students(workshop_key)
+    if clean_roll not in students:
+        return False, "Student not found in selected domain."
+
+    updated_students = [item for item in students if item != clean_roll]
+    file_path = os.path.join(STUDENTS_DIR, WORKSHOP_FILES[workshop_key])
+    _write_students_csv(file_path, updated_students)
+    return True, f"{clean_roll} removed from {WORKSHOP_LABELS[workshop_key]}."
+
+
+def update_student_roll_number(workshop_key: str, old_roll: str, new_roll: str) -> tuple[bool, str]:
+    if workshop_key not in WORKSHOP_FILES:
+        return False, "Invalid domain selected."
+
+    old_clean = (old_roll or "").strip().upper()
+    new_clean = (new_roll or "").strip().upper()
+    if not is_valid_roll_number(new_clean):
+        return False, "New roll number format is invalid."
+
+    students = get_workshop_students(workshop_key)
+    if old_clean not in students:
+        return False, "Original roll number not found in selected domain."
+    if new_clean in students and new_clean != old_clean:
+        return False, "New roll number already exists in selected domain."
+
+    updated_students = [new_clean if roll == old_clean else roll for roll in students]
+    file_path = os.path.join(STUDENTS_DIR, WORKSHOP_FILES[workshop_key])
+    _write_students_csv(file_path, updated_students)
+    return True, f"Updated {old_clean} to {new_clean}."
+
+
+def move_student_between_workshops(source_key: str, target_key: str, roll_number: str) -> tuple[bool, str]:
+    if source_key not in WORKSHOP_FILES or target_key not in WORKSHOP_FILES:
+        return False, "Invalid domain selected."
+    if source_key == target_key:
+        return False, "Source and destination domains are the same."
+
+    clean_roll = (roll_number or "").strip().upper()
+    source_students = get_workshop_students(source_key)
+    target_students = get_workshop_students(target_key)
+
+    if clean_roll not in source_students:
+        return False, "Student not found in source domain."
+    if clean_roll in target_students:
+        return False, "Student already exists in destination domain."
+
+    source_students = [roll for roll in source_students if roll != clean_roll]
+    target_students.append(clean_roll)
+
+    _write_students_csv(os.path.join(STUDENTS_DIR, WORKSHOP_FILES[source_key]), source_students)
+    _write_students_csv(os.path.join(STUDENTS_DIR, WORKSHOP_FILES[target_key]), target_students)
+    return True, f"Moved {clean_roll} from {WORKSHOP_LABELS[source_key]} to {WORKSHOP_LABELS[target_key]}."
+
+
+def validate_roll_numbers(roll_numbers: list[str]) -> dict:
+    invalid = [roll for roll in roll_numbers if not is_valid_roll_number(roll)]
+    seen = set()
+    duplicates = []
+    for roll in roll_numbers:
+        if roll in seen and roll not in duplicates:
+            duplicates.append(roll)
+        seen.add(roll)
+    return {
+        "total_rows": len(roll_numbers),
+        "unique_count": len(set(roll_numbers)),
+        "invalid_rows": invalid,
+        "duplicates": duplicates,
+    }
+
+
+def build_hod_analytics() -> dict:
+    records = load_attendance_records()
+    today = date.today().isoformat()
+    cards = []
+
+    for workshop_key in ("vlsi", "embedded"):
+        students = get_workshop_students(workshop_key)
+        status_map = {
+            record["roll_number"]: record["status"]
+            for record in records
+            if record.get("workshop_type") == workshop_key and record.get("date") == today
+        }
+        present = sum(1 for roll in students if status_map.get(roll) == "Present")
+        absent = max(0, len(students) - present)
+        percentage = round((present / len(students)) * 100, 2) if students else 0.0
+        cards.append(
+            {
+                "workshop_key": workshop_key,
+                "workshop_label": WORKSHOP_LABELS[workshop_key],
+                "present": present,
+                "absent": absent,
+                "attendance_percentage": percentage,
+            }
+        )
+
+    low_attendance_students = []
+    for workshop_key in ("vlsi", "embedded"):
+        for roll in get_workshop_students(workshop_key):
+            student_records = [
+                record
+                for record in records
+                if record.get("workshop_type") == workshop_key and record.get("roll_number") == roll
+            ]
+            total_classes = len(student_records)
+            if total_classes == 0:
+                continue
+            present_classes = sum(1 for record in student_records if record.get("status") == "Present")
+            percentage = round((present_classes / total_classes) * 100, 2)
+            if percentage < LOW_ATTENDANCE_THRESHOLD:
+                low_attendance_students.append(
+                    {
+                        "roll_number": roll,
+                        "workshop_label": WORKSHOP_LABELS[workshop_key],
+                        "percentage": percentage,
+                    }
+                )
+
+    trend_map = {}
+    for record in records:
+        workshop_key = record.get("workshop_type")
+        if workshop_key not in {"vlsi", "embedded"}:
+            continue
+        trend_key = (record.get("date"), workshop_key)
+        if trend_key not in trend_map:
+            trend_map[trend_key] = {"present": 0, "total": 0}
+        trend_map[trend_key]["total"] += 1
+        if record.get("status") == "Present":
+            trend_map[trend_key]["present"] += 1
+
+    trend_rows = []
+    for (record_date, workshop_key), data in sorted(trend_map.items(), reverse=True)[:10]:
+        percentage = round((data["present"] / data["total"]) * 100, 2) if data["total"] else 0.0
+        trend_rows.append(
+            {
+                "date": record_date,
+                "workshop_label": WORKSHOP_LABELS.get(workshop_key, workshop_key),
+                "present": data["present"],
+                "total": data["total"],
+                "percentage": percentage,
+            }
+        )
+
+    return {
+        "today": today,
+        "cards": cards,
+        "low_attendance_students": sorted(low_attendance_students, key=lambda item: item["percentage"]),
+        "trend_rows": trend_rows,
+    }
+
+
 ensure_directories_and_files()
 ensure_database()
 migrate_csv_attendance_to_db_if_needed()
+
+
+@app.before_request
+def apply_session_timeout() -> None:
+    if request.endpoint in {"login", "forgot_password", "static"}:
+        return
+
+    username = session.get("username")
+    if not username:
+        return
+
+    last_active_raw = session.get("last_activity")
+    if last_active_raw:
+        try:
+            last_active = datetime.fromisoformat(last_active_raw)
+            if datetime.now() - last_active > app.permanent_session_lifetime:
+                session.clear()
+                flash("Session expired due to inactivity. Please login again.", "error")
+                return redirect(url_for("login"))
+        except ValueError:
+            pass
+
+    session["last_activity"] = datetime.now().isoformat(timespec="seconds")
+    session.permanent = True
 
 
 def role_required(expected_role):
@@ -272,14 +791,18 @@ def get_workshop_students(workshop_key: str) -> list:
 
 
 def build_users() -> dict:
-    users = dict(USERS)
+    users = {}
     for workshop_key in WORKSHOP_FILES:
         for roll_number in get_workshop_students(workshop_key):
             normalized_roll = roll_number.strip().upper()
             if normalized_roll:
                 users.setdefault(
                     normalized_roll,
-                    {"password": STUDENT_COMMON_PASSWORD, "role": "student"},
+                    {
+                        "username": normalized_roll,
+                        "password": STUDENT_COMMON_PASSWORD,
+                        "role": "student",
+                    },
                 )
     return users
 
@@ -291,6 +814,8 @@ def add_student_to_workshop(workshop_key: str, roll_number: str) -> tuple[bool, 
     clean_roll = roll_number.strip().upper()
     if not clean_roll:
         return False, "Roll number is required."
+    if not is_valid_roll_number(clean_roll):
+        return False, "Invalid roll number format."
 
     students = get_workshop_students(workshop_key)
     if clean_roll in students:
@@ -651,32 +1176,124 @@ def login():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
+        normalized_username = normalize_username(username)
 
-        all_users = build_users()
-        user = all_users.get(username)
-        if not user:
-            user = all_users.get(username.upper())
-        if not user:
-            user = all_users.get(username.lower())
+        failed_attempts, lock_until = get_login_attempt_state(normalized_username)
+        if lock_until and datetime.now() < lock_until:
+            flash(
+                (
+                    f"Account is locked. Try again after "
+                    f"{lock_until.strftime('%Y-%m-%d %I:%M %p')}."
+                ),
+                "error",
+            )
+            return render_template("login.html")
 
-        if user and user["password"] == password:
-            session["username"] = username
-            session["role"] = user["role"]
+        staff_user = get_staff_user(normalized_username)
+        if staff_user and int(staff_user["is_active"]) != 1:
+            flash("This account is inactive. Contact administrator.", "error")
+            return render_template("login.html")
+
+        staff_authenticated = bool(
+            staff_user and check_password_hash(staff_user["password_hash"], password)
+        )
+        if staff_authenticated:
+            clear_login_attempts(normalized_username)
+            role = staff_user["role"]
+            session.clear()
+            session["username"] = normalized_username
+            session["role"] = role
+            session["last_activity"] = datetime.now().isoformat(timespec="seconds")
+            session.permanent = True
+            add_audit_log("LOGIN_SUCCESS", f"Role={role}", actor=normalized_username)
             flash("Login successful.", "success")
-            if user["role"] == "hod":
+            if role == "hod":
                 return redirect(url_for("hod_dashboard"))
-            if user["role"] == "student":
-                return redirect(url_for("student_dashboard"))
             return redirect(url_for("faculty_dashboard"))
 
-        flash("Invalid username or password.", "error")
+        all_users = build_users()
+        user = all_users.get((username or "").strip().upper())
+
+        if user and user["password"] == password:
+            clear_login_attempts((username or "").strip())
+            session.clear()
+            session["username"] = user["username"]
+            session["role"] = user["role"]
+            session["last_activity"] = datetime.now().isoformat(timespec="seconds")
+            session.permanent = True
+            add_audit_log("LOGIN_SUCCESS", "Role=student", actor=user["username"])
+            flash("Login successful.", "success")
+            return redirect(url_for("student_dashboard"))
+
+        attempts, new_lock_until = register_failed_attempt(normalized_username)
+        remaining = max(0, MAX_LOGIN_ATTEMPTS - attempts)
+        if new_lock_until:
+            add_audit_log("LOGIN_LOCKED", "Account temporarily locked after repeated failures.", actor=normalized_username)
+            flash(
+                (
+                    f"Too many failed attempts. Account locked until "
+                    f"{new_lock_until.strftime('%Y-%m-%d %I:%M %p')}."
+                ),
+                "error",
+            )
+        else:
+            flash(f"Invalid username or password. Attempts remaining: {remaining}", "error")
+
+        add_audit_log("LOGIN_FAILED", "Invalid credentials.", actor=normalized_username)
 
     return render_template("login.html")
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    security_question = "What is your department code?"
+    if request.method == "POST":
+        username = normalize_username(request.form.get("username", ""))
+        security_answer = request.form.get("security_answer", "").strip()
+        new_password = request.form.get("new_password", "")
+        confirm_password = request.form.get("confirm_password", "")
+
+        user = get_staff_user(username)
+        if not user:
+            flash("User not found.", "error")
+            return render_template("forgot_password.html", security_question=security_question)
+
+        if user["role"] not in {"hod", "faculty"}:
+            flash("Password reset is available only for HOD and Faculty.", "error")
+            return render_template("forgot_password.html", security_question=security_question)
+
+        if new_password != confirm_password:
+            flash("New password and confirmation do not match.", "error")
+            return render_template("forgot_password.html", security_question=security_question)
+
+        answer_hash = user["security_answer_hash"] or ""
+        valid_answer = any(
+            check_password_hash(answer_hash, candidate)
+            for candidate in {security_answer, security_answer.lower(), security_answer.upper()}
+            if candidate
+        )
+        if not valid_answer:
+            add_audit_log("FORGOT_PASSWORD_FAILED", "Security answer mismatch.", actor=username)
+            flash("Security answer is incorrect.", "error")
+            return render_template("forgot_password.html", security_question=security_question)
+
+        ok, message = update_staff_password(username, new_password)
+        if ok:
+            clear_login_attempts(username)
+            add_audit_log("PASSWORD_RESET", "Password changed through forgot password flow.", actor=username)
+            flash("Password reset successful. Please login.", "success")
+            return redirect(url_for("login"))
+
+        flash(message, "error")
+
+    return render_template("forgot_password.html", security_question=security_question)
 
 
 @app.route("/logout")
 def logout():
+    actor = session.get("username")
     session.clear()
+    if actor:
+        add_audit_log("LOGOUT", "User logged out.", actor=actor)
     flash("Logged out successfully.", "success")
     return redirect(url_for("login"))
 
@@ -685,27 +1302,84 @@ def logout():
 @role_required("hod")
 def hod_dashboard():
     if request.method == "POST":
-        vlsi_file = request.files.get("vlsi_file")
-        embedded_file = request.files.get("embedded_file")
-        not_in_workshop_file = request.files.get("not_in_workshop_file")
+        if request.form.get("confirm_csv_upload") == "1":
+            preview_payload = session.get("csv_preview_payload") or {}
+            if not preview_payload:
+                flash("No preview data found. Upload CSV files first.", "error")
+            else:
+                for workshop_key in WORKSHOP_FILES:
+                    payload = preview_payload.get(workshop_key)
+                    if not payload:
+                        continue
+                    _write_students_csv(
+                        os.path.join(STUDENTS_DIR, WORKSHOP_FILES[workshop_key]),
+                        payload.get("roll_numbers", []),
+                    )
+                session.pop("csv_preview_payload", None)
+                session.pop("csv_preview_report", None)
+                add_audit_log("CSV_UPLOAD_CONFIRMED", "Student CSV files uploaded after validation preview.")
+                flash("Student CSV files uploaded successfully.", "success")
+        elif request.form.get("cancel_csv_preview") == "1":
+            session.pop("csv_preview_payload", None)
+            session.pop("csv_preview_report", None)
+            flash("CSV upload preview canceled.", "success")
+        else:
+            files_map = {
+                "vlsi": request.files.get("vlsi_file"),
+                "embedded": request.files.get("embedded_file"),
+                "not_in_workshop": request.files.get("not_in_workshop_file"),
+            }
 
-        try:
-            if vlsi_file and vlsi_file.filename:
-                save_uploaded_student_file(vlsi_file, "vlsi")
-            if embedded_file and embedded_file.filename:
-                save_uploaded_student_file(embedded_file, "embedded")
-            if not_in_workshop_file and not_in_workshop_file.filename:
-                save_uploaded_student_file(not_in_workshop_file, "not_in_workshop")
-            flash("Student CSV files uploaded successfully.", "success")
-        except Exception as exc:
-            flash(f"Error while uploading CSV files: {exc}", "error")
+            preview_payload = {}
+            preview_report = {}
+            uploaded_any = False
+
+            try:
+                for workshop_key, file_storage in files_map.items():
+                    if not (file_storage and file_storage.filename):
+                        continue
+                    uploaded_any = True
+
+                    temp_name = secure_filename(file_storage.filename)
+                    temp_path = os.path.join(STUDENTS_DIR, f"preview_{workshop_key}_{temp_name}")
+                    file_storage.save(temp_path)
+                    try:
+                        roll_numbers = [roll.strip().upper() for roll in read_roll_numbers_from_csv(temp_path) if roll.strip()]
+                    finally:
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
+
+                    validation = validate_roll_numbers(roll_numbers)
+                    existing_students = set(get_workshop_students(workshop_key))
+                    validation["already_existing"] = sorted(list(set(roll_numbers) & existing_students))
+                    validation["valid_rows"] = [roll for roll in roll_numbers if is_valid_roll_number(roll)]
+
+                    preview_payload[workshop_key] = {"roll_numbers": roll_numbers}
+                    preview_report[workshop_key] = validation
+
+                if not uploaded_any:
+                    flash("Please choose at least one CSV file.", "error")
+                else:
+                    session["csv_preview_payload"] = preview_payload
+                    session["csv_preview_report"] = preview_report
+                    flash("CSV validation preview generated. Please review and confirm upload.", "success")
+            except Exception as exc:
+                flash(f"Error while preparing CSV preview: {exc}", "error")
 
     counts = {
         "vlsi": len(get_workshop_students("vlsi")),
         "embedded": len(get_workshop_students("embedded")),
         "not_in_workshop": len(get_workshop_students("not_in_workshop")),
     }
-    return render_template("hod_dashboard.html", counts=counts)
+    return render_template(
+        "hod_dashboard.html",
+        counts=counts,
+        analytics=build_hod_analytics(),
+        faculty_users=list_staff_users(role="faculty"),
+        students=get_all_students_with_workshop(),
+        audit_logs=get_recent_audit_logs(limit=20),
+        csv_preview_report=session.get("csv_preview_report") or {},
+    )
 
 
 @app.route("/faculty/dashboard")
@@ -846,6 +1520,127 @@ def add_student_hod():
     roll_number = request.form.get("roll_number", "")
 
     ok, message = add_student_to_workshop(workshop_key, roll_number)
+    if ok:
+        add_audit_log("STUDENT_ADDED", f"Added {roll_number.strip().upper()} to {workshop_key}.")
+    flash(message, "success" if ok else "error")
+    return redirect(url_for("hod_dashboard"))
+
+
+@app.route("/hod/change-password", methods=["POST"])
+@role_required("hod")
+def change_hod_password():
+    current_password = request.form.get("current_password", "")
+    new_password = request.form.get("new_password", "")
+    confirm_password = request.form.get("confirm_password", "")
+    username = normalize_username(session.get("username", ""))
+
+    user = get_staff_user(username)
+    if not user or user["role"] != "hod":
+        flash("HOD account not found.", "error")
+        return redirect(url_for("hod_dashboard"))
+
+    if not check_password_hash(user["password_hash"], current_password):
+        flash("Current password is incorrect.", "error")
+        return redirect(url_for("hod_dashboard"))
+
+    if new_password != confirm_password:
+        flash("New password and confirmation do not match.", "error")
+        return redirect(url_for("hod_dashboard"))
+
+    ok, message = update_staff_password(username, new_password)
+    if ok:
+        add_audit_log("PASSWORD_CHANGED", "HOD changed account password.")
+    flash(message, "success" if ok else "error")
+    return redirect(url_for("hod_dashboard"))
+
+
+@app.route("/faculty/add", methods=["POST"])
+@role_required("hod")
+def add_faculty_account():
+    username = request.form.get("faculty_username", "")
+    password = request.form.get("faculty_password", "")
+    email = request.form.get("faculty_email", "")
+    security_answer = request.form.get("faculty_security_answer", "ECE")
+
+    ok, message = create_faculty_user(username, password, email, security_answer)
+    if ok:
+        add_audit_log("FACULTY_ADDED", f"Created faculty account {normalize_username(username)}.")
+    flash(message, "success" if ok else "error")
+    return redirect(url_for("hod_dashboard"))
+
+
+@app.route("/faculty/remove", methods=["POST"])
+@role_required("hod")
+def remove_faculty_account():
+    username = request.form.get("faculty_username", "")
+    ok, message = remove_faculty_user(username)
+    if ok:
+        add_audit_log("FACULTY_REMOVED", f"Removed faculty account {normalize_username(username)}.")
+    flash(message, "success" if ok else "error")
+    return redirect(url_for("hod_dashboard"))
+
+
+@app.route("/faculty/reset-password", methods=["POST"])
+@role_required("hod")
+def reset_faculty_password():
+    username = request.form.get("faculty_username", "")
+    new_password = request.form.get("new_password", "")
+    normalized = normalize_username(username)
+    user = get_staff_user(normalized)
+    if not user or user["role"] != "faculty":
+        flash("Faculty account not found.", "error")
+        return redirect(url_for("hod_dashboard"))
+
+    ok, message = update_staff_password(normalized, new_password)
+    if ok:
+        add_audit_log("FACULTY_PASSWORD_RESET", f"Reset password for faculty {normalized}.")
+    flash(message, "success" if ok else "error")
+    return redirect(url_for("hod_dashboard"))
+
+
+@app.route("/students/remove", methods=["POST"])
+@role_required("hod")
+def remove_student_hod():
+    workshop_key = request.form.get("workshop", "vlsi")
+    roll_number = request.form.get("roll_number", "")
+    ok, message = remove_student_from_workshop(workshop_key, roll_number)
+    if ok:
+        add_audit_log("STUDENT_REMOVED", f"Removed {roll_number.strip().upper()} from {workshop_key}.")
+    flash(message, "success" if ok else "error")
+    return redirect(url_for("hod_dashboard"))
+
+
+@app.route("/students/move", methods=["POST"])
+@role_required("hod")
+def move_student_hod():
+    source_workshop = request.form.get("source_workshop", "vlsi")
+    target_workshop = request.form.get("target_workshop", "embedded")
+    roll_number = request.form.get("roll_number", "")
+    ok, message = move_student_between_workshops(source_workshop, target_workshop, roll_number)
+    if ok:
+        add_audit_log(
+            "STUDENT_MOVED",
+            (
+                f"Moved {roll_number.strip().upper()} "
+                f"from {source_workshop} to {target_workshop}."
+            ),
+        )
+    flash(message, "success" if ok else "error")
+    return redirect(url_for("hod_dashboard"))
+
+
+@app.route("/students/update-roll", methods=["POST"])
+@role_required("hod")
+def update_student_roll_hod():
+    workshop_key = request.form.get("workshop", "vlsi")
+    old_roll = request.form.get("old_roll_number", "")
+    new_roll = request.form.get("new_roll_number", "")
+    ok, message = update_student_roll_number(workshop_key, old_roll, new_roll)
+    if ok:
+        add_audit_log(
+            "STUDENT_ROLL_UPDATED",
+            f"Updated roll {old_roll.strip().upper()} to {new_roll.strip().upper()} in {workshop_key}.",
+        )
     flash(message, "success" if ok else "error")
     return redirect(url_for("hod_dashboard"))
 
@@ -897,10 +1692,14 @@ def mark_attendance(workshop_key):
             )
 
         posted_at = datetime.now().isoformat(timespec="seconds")
+        absent_roll_numbers = {
+            (roll or "").strip().upper()
+            for roll in request.form.getlist("absent_roll_numbers")
+            if (roll or "").strip()
+        }
         submitted_status = {}
         for roll in students:
-            status = request.form.get(f"status_{roll}", "Absent")
-            submitted_status[roll] = "Present" if status == "Present" else "Absent"
+            submitted_status[roll] = "Absent" if roll in absent_roll_numbers else "Present"
 
         filtered_records = list(existing_records)
 
@@ -917,6 +1716,10 @@ def mark_attendance(workshop_key):
             )
 
         save_attendance_records(filtered_records)
+        add_audit_log(
+            "ATTENDANCE_POSTED",
+            f"Workshop={workshop_key}, date={selected_date}, session={selected_session}",
+        )
         flash(
             (
                 f"Attendance saved for {WORKSHOP_LABELS[workshop_key]} on "
@@ -1069,6 +1872,11 @@ def export_report_csv():
                 workshop_key,
             ])
 
+    add_audit_log(
+        "REPORT_EXPORTED_CSV",
+        f"Workshop={workshop_key}, date={selected_date}, session={selected_session}",
+    )
+
     return send_file(export_path, as_attachment=True, download_name=export_filename)
 
 
@@ -1099,6 +1907,10 @@ def export_report_pdf():
         report_title="Complete Report (Present & Absent)",
     )
     file_name = f"attendance_{workshop_key}_{selected_date}_{selected_session}.pdf"
+    add_audit_log(
+        "REPORT_EXPORTED_PDF",
+        f"Workshop={workshop_key}, date={selected_date}, session={selected_session}",
+    )
     return Response(
         pdf_bytes,
         mimetype="application/pdf",
@@ -1218,6 +2030,13 @@ def update_attendance_record():
         )
 
     save_attendance_records(records)
+    add_audit_log(
+        "ATTENDANCE_UPDATED",
+        (
+            f"Roll={roll_number}, workshop={workshop_key}, date={selected_date}, "
+            f"session={selected_session}, status={new_status}"
+        ),
+    )
     flash(f"Attendance updated for {roll_number}.", "success")
     return redirect(
         url_for(
@@ -1256,6 +2075,13 @@ def delete_attendance_record():
 
     if len(filtered_records) != len(records):
         save_attendance_records(filtered_records)
+        add_audit_log(
+            "ATTENDANCE_DELETED",
+            (
+                f"Roll={roll_number}, workshop={workshop_key}, date={selected_date}, "
+                f"session={selected_session}"
+            ),
+        )
         flash(f"Attendance deleted for {roll_number}.", "success")
     else:
         flash("No matching attendance record found to delete.", "error")
@@ -1296,6 +2122,13 @@ def delete_attendance_batch():
     deleted_count = len(records) - len(filtered_records)
     if deleted_count > 0:
         save_attendance_records(filtered_records)
+        add_audit_log(
+            "ATTENDANCE_BATCH_DELETED",
+            (
+                f"Deleted={deleted_count}, workshop={workshop_key}, "
+                f"date={selected_date}, session={selected_session}"
+            ),
+        )
         flash(
             (
                 f"Deleted {deleted_count} records for {WORKSHOP_LABELS[workshop_key]} "

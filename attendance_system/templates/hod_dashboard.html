@@ -4,182 +4,359 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HOD Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #f4f8f7;
-            --card: #ffffff;
-            --primary: #0b6b4f;
-            --primary-dark: #084f3b;
-            --text: #1a1a1a;
-            --muted: #5f6b7a;
-            --border: #d6e5df;
-            --error: #a32222;
-            --success: #177245;
+            --bg-1: #081d18;
+            --bg-2: #0c342b;
+            --surface: #ffffff;
+            --surface-alt: #f2f8f6;
+            --ink: #12211d;
+            --muted: #5a6f68;
+            --brand: #0b8f68;
+            --brand-dark: #09694d;
+            --border: #d7e8e2;
+            --danger: #a82a2a;
+            --danger-dark: #841f1f;
+            --warn: #b66c00;
+            --ok: #15784d;
+            --ring: rgba(11, 143, 104, 0.22);
+            --shadow: rgba(5, 32, 25, 0.15);
         }
 
-        * { box-sizing: border-box; }
+        * {
+            box-sizing: border-box;
+        }
 
         body {
             margin: 0;
-            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-            color: var(--text);
-            background: linear-gradient(135deg, #e5f5ee, #f4f8f7);
-            padding: 20px;
+            min-height: 100vh;
+            font-family: "Manrope", "Segoe UI", sans-serif;
+            color: var(--ink);
+            background:
+                radial-gradient(circle at 8% 14%, rgba(57, 201, 157, 0.18), transparent 32%),
+                radial-gradient(circle at 90% 4%, rgba(11, 143, 104, 0.22), transparent 38%),
+                linear-gradient(130deg, var(--bg-1), var(--bg-2));
         }
 
-        .container {
-            max-width: 1000px;
+        .layout {
+            max-width: 1220px;
             margin: 0 auto;
+            padding: 22px;
             display: grid;
-            gap: 16px;
+            gap: 14px;
         }
 
-        .panel {
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 16px;
-            box-shadow: 0 10px 24px rgba(11, 107, 79, 0.08);
-        }
-
-        h1, h2 {
-            margin-top: 0;
-            color: var(--primary);
-        }
-
-        .topbar {
+        .hero {
+            border: 1px solid rgba(199, 236, 224, 0.3);
+            border-radius: 18px;
+            padding: 18px;
+            background: linear-gradient(145deg, rgba(8, 38, 31, 0.9), rgba(8, 28, 23, 0.88));
+            box-shadow: 0 24px 42px rgba(3, 15, 12, 0.42);
+            color: #e8fff6;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 10px;
+            gap: 12px;
             flex-wrap: wrap;
         }
 
+        .hero h1 {
+            margin: 0;
+            font-size: 1.9rem;
+            font-weight: 800;
+        }
+
+        .subtitle {
+            margin-top: 5px;
+            color: #b8ddcf;
+            font-size: 0.93rem;
+        }
+
+        .actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .panel {
+            border-radius: 16px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 16px;
+            box-shadow: 0 14px 30px var(--shadow);
+        }
+
+        h2 {
+            margin: 0;
+            color: #0f5f48;
+            font-size: 1.2rem;
+        }
+
+        h3 {
+            color: #10684f;
+            margin: 14px 0 8px;
+            font-size: 1rem;
+        }
+
+        .hint {
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 0.88rem;
+        }
+
         .btn {
-            display: inline-block;
-            text-decoration: none;
             border: none;
-            border-radius: 8px;
-            padding: 9px 14px;
-            font-weight: 600;
+            border-radius: 10px;
+            padding: 9px 13px;
+            font-weight: 700;
+            font-size: 0.9rem;
             cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .btn:focus-visible,
+        input:focus-visible,
+        select:focus-visible {
+            outline: 2px solid var(--brand);
+            outline-offset: 1px;
+            box-shadow: 0 0 0 4px var(--ring);
         }
 
         .btn-primary {
-            background: var(--primary);
-            color: #ffffff;
-        }
-
-        .btn-primary:hover {
-            background: var(--primary-dark);
+            color: #fff;
+            background: linear-gradient(180deg, var(--brand), var(--brand-dark));
+            box-shadow: 0 10px 22px rgba(11, 143, 104, 0.24);
         }
 
         .btn-muted {
-            background: #edf2f4;
-            color: #1a1a1a;
-            border: 1px solid #d5dde1;
+            color: #0f4133;
+            background: #ecf4f1;
+            border: 1px solid #cfe2dc;
         }
 
-        .grid {
+        .btn-danger {
+            color: #fff;
+            background: linear-gradient(180deg, var(--danger), var(--danger-dark));
+        }
+
+        .btn-small {
+            padding: 6px 10px;
+            font-size: 0.8rem;
+        }
+
+        .kpi-grid,
+        .grid,
+        .sample-links {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 12px;
+            gap: 10px;
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
         }
 
-        .stat {
-            background: #fafdfc;
+        .kpi,
+        .stat,
+        .sample-item {
             border: 1px solid var(--border);
-            border-radius: 10px;
+            border-radius: 12px;
+            background: var(--surface-alt);
             padding: 12px;
         }
 
-        .sample-links {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 10px;
-            margin-bottom: 14px;
+        .kpi-label {
+            color: var(--muted);
+            font-size: 0.76rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
         }
 
-        .sample-item {
-            border: 1px dashed var(--border);
-            border-radius: 10px;
-            padding: 10px;
-            background: #fbfffd;
+        .kpi-value {
+            margin-top: 7px;
+            font-size: 1.65rem;
+            font-weight: 800;
+            color: #0a6249;
         }
 
         .sample-item strong {
             display: block;
-            margin-bottom: 7px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 6px;
-            font-weight: 600;
-        }
-
-        input[type="file"] {
-            width: 100%;
-            margin-bottom: 12px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 8px;
-            background: #fff;
+            margin-bottom: 8px;
         }
 
         .flash {
             list-style: none;
-            margin: 0;
+            margin: 0 0 8px;
             padding: 0;
+            display: grid;
+            gap: 8px;
         }
 
         .flash li {
-            padding: 10px;
-            border-radius: 8px;
-            margin-bottom: 8px;
-            font-size: 0.92rem;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid transparent;
+            font-size: 0.9rem;
+            font-weight: 600;
         }
 
         .flash .success {
-            background: #e8f7ef;
-            color: var(--success);
-            border: 1px solid #bde4cb;
+            border-color: #b9e9d6;
+            background: #e7f9f1;
+            color: var(--ok);
         }
 
         .flash .error {
-            background: #fdecec;
-            color: var(--error);
-            border: 1px solid #f3b6b6;
+            border-color: #f1c0c0;
+            background: #fdeeee;
+            color: var(--danger);
+        }
+
+        label {
+            display: block;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: #274038;
+            font-size: 0.88rem;
+        }
+
+        input,
+        select {
+            width: 100%;
+            border: 1px solid #caddd7;
+            border-radius: 10px;
+            padding: 10px;
+            font-size: 0.93rem;
+            background: #fff;
+            font-family: inherit;
+        }
+
+        input[type="file"] {
+            margin-bottom: 10px;
         }
 
         .inline-form {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: 10px;
             align-items: end;
         }
 
-        .inline-form input,
-        .inline-form select {
-            width: 100%;
+        .two-col {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 12px;
+        }
+
+        .toolbar {
+            margin-top: 12px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .table-wrap {
+            margin-top: 10px;
+            overflow-x: auto;
             border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 9px 10px;
-            font-size: 0.95rem;
+            border-radius: 12px;
+            background: #fff;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 760px;
+        }
+
+        th,
+        td {
+            text-align: left;
+            vertical-align: top;
+            padding: 10px;
+            border-bottom: 1px solid #e2efeb;
+            font-size: 0.88rem;
+        }
+
+        th {
+            background: #edf7f3;
+            color: #124f3d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 0.73rem;
+        }
+
+        tbody tr:hover {
+            background: #f6fbf9;
+        }
+
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .warn {
+            color: var(--warn);
+            font-weight: 700;
+        }
+
+        .compact {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        @media (max-width: 760px) {
+            .layout {
+                padding: 14px;
+            }
+
+            .hero h1 {
+                font-size: 1.5rem;
+            }
+
+            .compact {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="panel topbar">
-            <h1>HOD Dashboard</h1>
+    <div class="layout">
+        <section class="hero">
             <div>
+                <h1>HOD Control Center</h1>
+                <div class="subtitle">ECE workshop operations, faculty governance, and attendance insights in one place.</div>
+            </div>
+            <div class="actions">
                 <a class="btn btn-primary" href="{{ url_for('attendance_report') }}">View Attendance Reports</a>
                 <a class="btn btn-muted" href="{{ url_for('logout') }}">Logout</a>
             </div>
-        </div>
+        </section>
 
-        <div class="panel">
+        <section class="panel">
+            <h2>Domain Snapshot</h2>
+            <div class="hint">Live student counts across all available domains.</div>
+            <div class="kpi-grid" style="margin-top: 10px;">
+                <div class="kpi">
+                    <div class="kpi-label">VLSI Workshop</div>
+                    <div class="kpi-value">{{ counts.vlsi }}</div>
+                </div>
+                <div class="kpi">
+                    <div class="kpi-label">Embedded Systems</div>
+                    <div class="kpi-value">{{ counts.embedded }}</div>
+                </div>
+                <div class="kpi">
+                    <div class="kpi-label">Not in Workshop</div>
+                    <div class="kpi-value">{{ counts.not_in_workshop }}</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel">
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
                     <ul class="flash">
@@ -191,7 +368,9 @@
             {% endwith %}
 
             <h2>Upload Student CSV Files</h2>
-            <div class="sample-links">
+            <div class="hint">Upload CSV files first, review validation preview, then confirm upload.</div>
+
+            <div class="sample-links" style="margin-top: 12px; margin-bottom: 12px;">
                 <div class="sample-item">
                     <strong>VLSI Sample CSV</strong>
                     <a class="btn btn-muted" href="{{ url_for('download_sample_csv', workshop_key='vlsi') }}">Download Sample</a>
@@ -201,7 +380,7 @@
                     <a class="btn btn-muted" href="{{ url_for('download_sample_csv', workshop_key='embedded') }}">Download Sample</a>
                 </div>
                 <div class="sample-item">
-                    <strong>Not In Workshop Sample CSV</strong>
+                    <strong>Not in Workshop Sample CSV</strong>
                     <a class="btn btn-muted" href="{{ url_for('download_sample_csv', workshop_key='not_in_workshop') }}">Download Sample</a>
                 </div>
             </div>
@@ -216,48 +395,299 @@
                 <label for="not_in_workshop_file">Students Not Participating in Workshop</label>
                 <input id="not_in_workshop_file" name="not_in_workshop_file" type="file" accept=".csv">
 
-                <button class="btn btn-primary" type="submit">Upload CSV Files</button>
+                <button class="btn btn-primary" type="submit">Validate CSV Files</button>
             </form>
-        </div>
 
-        <div class="panel">
-            <h2>Add Roll Number To Any Domain</h2>
-            <form method="post" action="{{ url_for('add_student_hod') }}" class="inline-form">
-                <div>
-                    <label for="workshop">Select Domain</label>
-                    <select id="workshop" name="workshop" required>
-                        <option value="vlsi">VLSI Workshop</option>
-                        <option value="embedded">Embedded Systems Workshop</option>
-                        <option value="not_in_workshop">Students Not in Workshop</option>
-                    </select>
+            {% if csv_preview_report %}
+                <h3>CSV Validation Preview</h3>
+                <div class="grid">
+                    {% for workshop_key, summary in csv_preview_report.items() %}
+                        <div class="stat">
+                            <strong>{{ workshop_key|replace('_', ' ')|title }}</strong>
+                            <div>Total rows: {{ summary.total_rows }}</div>
+                            <div>Unique rows: {{ summary.unique_count }}</div>
+                            <div>Invalid rows: {{ summary.invalid_rows|length }}</div>
+                            <div>Duplicate rows: {{ summary.duplicates|length }}</div>
+                            <div>Already existing: {{ summary.already_existing|length }}</div>
+                        </div>
+                    {% endfor %}
                 </div>
-                <div>
-                    <label for="roll_number">Roll Number</label>
-                    <input id="roll_number" name="roll_number" type="text" placeholder="e.g. 22A91A0401" required>
+                <div class="toolbar">
+                    <form method="post">
+                        <input type="hidden" name="confirm_csv_upload" value="1">
+                        <button class="btn btn-primary" type="submit">Confirm Upload</button>
+                    </form>
+                    <form method="post">
+                        <input type="hidden" name="cancel_csv_preview" value="1">
+                        <button class="btn btn-muted" type="submit">Cancel Preview</button>
+                    </form>
                 </div>
-                <div>
-                    <button class="btn btn-primary" type="submit">Add Student</button>
-                </div>
-            </form>
-        </div>
+            {% endif %}
+        </section>
 
-        <div class="panel">
-            <h2>Current Student Counts</h2>
-            <div class="grid">
-                <div class="stat">
-                    <strong>VLSI Workshop</strong>
-                    <div>{{ counts.vlsi }} students</div>
-                </div>
-                <div class="stat">
-                    <strong>Embedded Systems Workshop</strong>
-                    <div>{{ counts.embedded }} students</div>
-                </div>
-                <div class="stat">
-                    <strong>Not in Workshop</strong>
-                    <div>{{ counts.not_in_workshop }} students</div>
-                </div>
+        <section class="panel two-col">
+            <div>
+                <h2>Add Roll Number to Any Domain</h2>
+                <form method="post" action="{{ url_for('add_student_hod') }}" class="inline-form" style="margin-top: 10px;">
+                    <div>
+                        <label for="workshop">Select Domain</label>
+                        <select id="workshop" name="workshop" required>
+                            <option value="vlsi">VLSI Workshop</option>
+                            <option value="embedded">Embedded Systems Workshop</option>
+                            <option value="not_in_workshop">Students Not in Workshop</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="roll_number">Roll Number</label>
+                        <input id="roll_number" name="roll_number" type="text" placeholder="e.g. 22A91A0401" required>
+                    </div>
+                    <div>
+                        <button class="btn btn-primary" type="submit">Add Student</button>
+                    </div>
+                </form>
             </div>
-        </div>
+
+            <div>
+                <h2>Change HOD Password</h2>
+                <form method="post" action="{{ url_for('change_hod_password') }}" class="inline-form" style="margin-top: 10px;">
+                    <div>
+                        <label for="current_password">Current Password</label>
+                        <input id="current_password" name="current_password" type="password" required>
+                    </div>
+                    <div>
+                        <label for="new_password">New Password</label>
+                        <input id="new_password" name="new_password" type="password" required>
+                    </div>
+                    <div>
+                        <label for="confirm_password">Confirm Password</label>
+                        <input id="confirm_password" name="confirm_password" type="password" required>
+                    </div>
+                    <div>
+                        <button class="btn btn-primary" type="submit">Update Password</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Faculty Account Management</h2>
+            <form method="post" action="{{ url_for('add_faculty_account') }}" class="inline-form" style="margin-top: 10px;">
+                <div>
+                    <label for="faculty_username">Faculty Username</label>
+                    <input id="faculty_username" name="faculty_username" type="text" required>
+                </div>
+                <div>
+                    <label for="faculty_password">Temporary Password</label>
+                    <input id="faculty_password" name="faculty_password" type="password" required>
+                </div>
+                <div>
+                    <label for="faculty_email">Faculty Email</label>
+                    <input id="faculty_email" name="faculty_email" type="email">
+                </div>
+                <div>
+                    <label for="faculty_security_answer">Security Answer</label>
+                    <input id="faculty_security_answer" name="faculty_security_answer" type="text" value="ECE" required>
+                </div>
+                <div>
+                    <button class="btn btn-primary" type="submit">Create Faculty Account</button>
+                </div>
+            </form>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for faculty in faculty_users %}
+                            <tr>
+                                <td>{{ faculty.username }}</td>
+                                <td>{{ faculty.email or '-' }}</td>
+                                <td>{{ faculty.created_at }}</td>
+                                <td>
+                                    <form method="post" action="{{ url_for('reset_faculty_password') }}" class="inline-form compact">
+                                        <input type="hidden" name="faculty_username" value="{{ faculty.username }}">
+                                        <input name="new_password" type="password" placeholder="New password" required>
+                                        <button class="btn btn-primary btn-small" type="submit">Reset Password</button>
+                                    </form>
+                                    <form method="post" action="{{ url_for('remove_faculty_account') }}" onsubmit="return confirm('Remove faculty {{ faculty.username }}?');" style="margin-top: 6px;">
+                                        <input type="hidden" name="faculty_username" value="{{ faculty.username }}">
+                                        <button class="btn btn-danger btn-small" type="submit">Remove Faculty</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% else %}
+                            <tr>
+                                <td colspan="4">No faculty accounts available.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Student Management (Edit / Move / Remove)</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Roll Number</th>
+                            <th>Current Domain</th>
+                            <th>Update Roll</th>
+                            <th>Move Domain</th>
+                            <th>Remove</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for student in students %}
+                            <tr>
+                                <td>{{ student.roll_number }}</td>
+                                <td>{{ student.workshop_label }}</td>
+                                <td>
+                                    <form method="post" action="{{ url_for('update_student_roll_hod') }}" class="inline-form compact">
+                                        <input type="hidden" name="workshop" value="{{ student.workshop }}">
+                                        <input type="hidden" name="old_roll_number" value="{{ student.roll_number }}">
+                                        <input name="new_roll_number" type="text" placeholder="New roll" required>
+                                        <button class="btn btn-muted btn-small" type="submit">Update</button>
+                                    </form>
+                                </td>
+                                <td>
+                                    <form method="post" action="{{ url_for('move_student_hod') }}" class="inline-form compact">
+                                        <input type="hidden" name="roll_number" value="{{ student.roll_number }}">
+                                        <input type="hidden" name="source_workshop" value="{{ student.workshop }}">
+                                        <select name="target_workshop" required>
+                                            {% for key, label in [('vlsi', 'VLSI Workshop'), ('embedded', 'Embedded Systems Workshop'), ('not_in_workshop', 'Students Not in Workshop')] %}
+                                                {% if key != student.workshop %}
+                                                    <option value="{{ key }}">{{ label }}</option>
+                                                {% endif %}
+                                            {% endfor %}
+                                        </select>
+                                        <button class="btn btn-primary btn-small" type="submit">Move</button>
+                                    </form>
+                                </td>
+                                <td>
+                                    <form method="post" action="{{ url_for('remove_student_hod') }}" onsubmit="return confirm('Remove student {{ student.roll_number }}?');">
+                                        <input type="hidden" name="workshop" value="{{ student.workshop }}">
+                                        <input type="hidden" name="roll_number" value="{{ student.roll_number }}">
+                                        <button class="btn btn-danger btn-small" type="submit">Remove</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% else %}
+                            <tr>
+                                <td colspan="5">No students found.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Analytics ({{ analytics.today }})</h2>
+            <div class="grid" style="margin-top: 10px;">
+                {% for card in analytics.cards %}
+                    <div class="stat">
+                        <strong>{{ card.workshop_label }}</strong>
+                        <div>Present: {{ card.present }}</div>
+                        <div>Absent: {{ card.absent }}</div>
+                        <div>Attendance: {{ card.attendance_percentage }}%</div>
+                    </div>
+                {% endfor %}
+            </div>
+
+            <h3>Low Attendance Students (&lt; 75%)</h3>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Roll Number</th>
+                            <th>Workshop</th>
+                            <th>Attendance %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in analytics.low_attendance_students %}
+                            <tr>
+                                <td>{{ item.roll_number }}</td>
+                                <td>{{ item.workshop_label }}</td>
+                                <td class="warn">{{ item.percentage }}%</td>
+                            </tr>
+                        {% else %}
+                            <tr>
+                                <td colspan="3">No low attendance students found.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <h3>Recent Attendance Trend</h3>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Workshop</th>
+                            <th>Present</th>
+                            <th>Total</th>
+                            <th>Attendance %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in analytics.trend_rows %}
+                            <tr>
+                                <td>{{ row.date }}</td>
+                                <td>{{ row.workshop_label }}</td>
+                                <td>{{ row.present }}</td>
+                                <td>{{ row.total }}</td>
+                                <td>{{ row.percentage }}%</td>
+                            </tr>
+                        {% else %}
+                            <tr>
+                                <td colspan="5">No attendance trend data available.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Recent Audit Logs</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Actor</th>
+                            <th>Action</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in audit_logs %}
+                            <tr>
+                                <td>{{ log.created_at }}</td>
+                                <td>{{ log.actor }}</td>
+                                <td>{{ log.action }}</td>
+                                <td>{{ log.details or '-' }}</td>
+                            </tr>
+                        {% else %}
+                            <tr>
+                                <td colspan="4">No logs yet.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
     </div>
 </body>
 </html>

@@ -6,37 +6,37 @@
     <title>{{ workshop_label }}</title>
     <style>
         :root {
-            --bg: #f2f6fc;
-            --card: #ffffff;
-            --primary: #235b99;
-            --primary-dark: #194675;
-            --text: #1a1a1a;
-            --muted: #5f6b7a;
-            --border: #d8e1ea;
-            --success: #177245;
-            --error: #a32222;
-            --present: #d9f2e2;
-            --absent: #fde9e9;
+            --page: #d6d7db;
+            --panel: #9acd32;
+            --panel-2: #97c92f;
+            --tile: #9dce33;
+            --line: #d8ea9c;
+            --ink: #183005;
+            --muted: #2e4d12;
+            --danger: #c51818;
+            --black: #0c0c0c;
+            --success: #0b5b2f;
+            --error: #8f1111;
         }
 
         * { box-sizing: border-box; }
 
         body {
             margin: 0;
-            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-            color: var(--text);
-            background: linear-gradient(140deg, #eaf2ff, #f2f6fc);
-            padding: 20px;
+            font-family: "Trebuchet MS", "Segoe UI", Tahoma, sans-serif;
+            color: var(--ink);
+            background: var(--page);
+            padding: 10px;
         }
 
         .container {
-            max-width: 1000px;
+            max-width: 920px;
             margin: 0 auto;
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 16px;
-            box-shadow: 0 12px 25px rgba(35, 91, 153, 0.09);
+            background: var(--panel);
+            border: 1px solid #c3dd78;
+            border-radius: 0;
+            padding: 6px;
+            box-shadow: 0 0 0 1px #c5dc7e;
         }
 
         .topbar {
@@ -45,38 +45,41 @@
             align-items: center;
             gap: 10px;
             flex-wrap: wrap;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
+            padding: 6px;
+            background: var(--panel-2);
+            border: 1px solid var(--line);
         }
 
         h1 {
             margin: 0;
-            color: var(--primary);
-            font-size: 1.45rem;
+            color: var(--ink);
+            font-size: 1.1rem;
         }
 
         .btn {
             display: inline-block;
-            border: none;
-            border-radius: 8px;
-            padding: 9px 13px;
+            border: 1px solid #b3d96b;
+            border-radius: 0;
+            padding: 7px 10px;
             text-decoration: none;
             font-weight: 600;
             cursor: pointer;
+            font-size: 0.88rem;
         }
 
         .btn-primary {
-            background: var(--primary);
-            color: #ffffff;
+            background: #3f6b0b;
+            color: #f5ffdd;
         }
 
         .btn-primary:hover {
-            background: var(--primary-dark);
+            background: #355a09;
         }
 
         .btn-muted {
-            background: #edf2f4;
-            color: #1a1a1a;
-            border: 1px solid #d5dde1;
+            background: #abd861;
+            color: var(--ink);
         }
 
         .flash {
@@ -87,80 +90,99 @@
 
         .flash li {
             padding: 10px;
-            border-radius: 8px;
+            border-radius: 0;
             margin-bottom: 8px;
             font-size: 0.92rem;
         }
 
         .flash .success {
-            background: #e8f7ef;
+            background: #d8f7cb;
             color: var(--success);
-            border: 1px solid #bde4cb;
+            border: 1px solid #9bcc89;
         }
 
         .flash .error {
-            background: #fdecec;
+            background: #ffdcdc;
             color: var(--error);
-            border: 1px solid #f3b6b6;
+            border: 1px solid #ef9f9f;
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 12px;
+            margin-top: 8px;
             font-size: 0.95rem;
         }
 
         th, td {
-            border: 1px solid var(--border);
-            padding: 10px;
+            border: 1px solid var(--line);
+            padding: 9px;
             text-align: left;
         }
 
         th {
-            background: #f7f9fc;
+            background: #addf62;
         }
 
         .empty {
             color: var(--muted);
             font-style: italic;
-            margin-top: 10px;
-        }
-
-        .status-box {
-            display: flex;
-            gap: 16px;
-            flex-wrap: wrap;
-        }
-
-        .present-option {
-            background: var(--present);
-            padding: 4px 8px;
-            border-radius: 6px;
+            margin-top: 8px;
         }
 
         .absent-option {
-            background: var(--absent);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #bee77e;
             padding: 4px 8px;
-            border-radius: 6px;
+            border-radius: 0;
         }
 
         .actions {
-            margin-top: 14px;
+            margin-top: 10px;
         }
 
         .bulk-actions {
             display: flex;
             gap: 10px;
             flex-wrap: wrap;
-            margin-bottom: 12px;
+            margin-bottom: 4px;
+        }
+
+        .bulk-actions .check-all {
+            color: var(--danger);
+            text-decoration: underline;
+            font-weight: 700;
+            border-color: transparent;
+            background: transparent;
+            padding: 2px 0;
+        }
+
+        .bulk-actions .clear-all {
+            background: #aedb67;
+            border-color: #c8eb97;
+            color: var(--ink);
+        }
+
+        .helper-line {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin: 6px 0 10px;
+            color: #1b3b04;
+            font-size: 1.7rem;
+        }
+
+        .helper-line .helper-text {
+            font-size: 1.65rem;
         }
 
         .session-panel {
-            border: 1px solid var(--border);
-            border-radius: 10px;
+            border: 1px solid var(--line);
+            border-radius: 0;
             padding: 10px;
-            background: #f8fbff;
+            background: #a6d45a;
             margin-bottom: 12px;
         }
 
@@ -173,17 +195,19 @@
         .session-panel select,
         .session-panel input[type="date"] {
             padding: 8px 10px;
-            border-radius: 8px;
-            border: 1px solid var(--border);
+            border-radius: 0;
+            border: 1px solid #d8ea9c;
+            background: #b4df72;
             min-width: 160px;
             margin-bottom: 8px;
+            color: var(--ink);
         }
 
         .add-panel {
-            border: 1px solid var(--border);
-            border-radius: 10px;
+            border: 1px solid var(--line);
+            border-radius: 0;
             padding: 10px;
-            background: #f8fbff;
+            background: #a8d75d;
             margin-bottom: 12px;
         }
 
@@ -197,11 +221,91 @@
         .add-form input {
             width: 100%;
             padding: 8px 10px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
+            border: 1px solid #d8ea9c;
+            border-radius: 0;
+            background: #b4df72;
+            color: var(--ink);
+        }
+
+        .roll-grid {
+            display: grid;
+            grid-template-columns: repeat(8, minmax(110px, 1fr));
+            border: 1px solid var(--black);
+            background: var(--panel-2);
+        }
+
+        .roll-tile {
+            min-height: 62px;
+            border: 1px solid var(--line);
+            background: var(--tile);
+            padding: 8px 4px 6px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            gap: 8px;
+            cursor: pointer;
+        }
+
+        .roll-tile:hover {
+            background: #a8d943;
+        }
+
+        .roll-tile input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            margin: 0;
+            accent-color: #ffffff;
+        }
+
+        .roll-id {
+            font-size: 0.9rem;
+            letter-spacing: 0;
+            color: #123000;
+            line-height: 1.15;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            overflow-wrap: normal;
+            word-break: normal;
+        }
+
+        .legend {
+            margin: 8px 0;
+            color: #28410f;
+            font-size: 0.95rem;
+        }
+
+        @media (max-width: 940px) {
+            .roll-grid {
+                grid-template-columns: repeat(5, minmax(105px, 1fr));
+            }
         }
 
         @media (max-width: 650px) {
+            .container {
+                padding: 5px;
+            }
+
+            h1 {
+                font-size: 1rem;
+            }
+
+            .roll-grid {
+                grid-template-columns: repeat(2, minmax(120px, 1fr));
+            }
+
+            .roll-id {
+                font-size: 0.78rem;
+            }
+
+            .helper-line {
+                font-size: 1.2rem;
+            }
+
+            .helper-line .helper-text {
+                font-size: 1.12rem;
+            }
+
             table, thead, tbody, th, td, tr {
                 display: block;
             }
@@ -293,40 +397,24 @@
                     <input type="hidden" name="session" value="{{ selected_session }}">
 
                     <div class="bulk-actions">
-                        <button class="btn btn-muted" type="button" onclick="setAllAttendance('Present')">Mark All Present</button>
-                        <button class="btn btn-muted" type="button" onclick="setAllAttendance('Absent')">Mark All Absent</button>
+                        <button class="btn check-all" type="button" onclick="setAllAbsentees(true)">Check_All</button>
+                        <button class="btn clear-all" type="button" onclick="setAllAbsentees(false)">Clear All</button>
                     </div>
+                    <div class="helper-line" aria-hidden="true">
+                        <span>&#10003;</span>
+                        <span class="helper-text">/check The Absentees</span>
+                    </div>
+                    <p class="legend">Checked roll numbers are marked <strong>Absent</strong>. Unchecked are marked <strong>Present</strong>.</p>
 
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>S.No</th>
-                                <th>Roll Number</th>
-                                <th>Attendance</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for roll in students %}
-                                <tr>
-                                    <td>{{ loop.index }}</td>
-                                    <td>{{ roll }}</td>
-                                    <td>
-                                        {% set saved = existing_status_map.get(roll, 'Absent') %}
-                                        <div class="status-box">
-                                            <label class="present-option">
-                                                <input type="radio" name="status_{{ roll }}" value="Present" {% if saved == 'Present' %}checked{% endif %}>
-                                                Present
-                                            </label>
-                                            <label class="absent-option">
-                                                <input type="radio" name="status_{{ roll }}" value="Absent" {% if saved != 'Present' %}checked{% endif %}>
-                                                Absent
-                                            </label>
-                                        </div>
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                    <div class="roll-grid">
+                        {% for roll in students %}
+                            {% set saved = existing_status_map.get(roll, 'Present') %}
+                            <label class="roll-tile" for="absent_{{ loop.index }}">
+                                <input id="absent_{{ loop.index }}" type="checkbox" name="absent_roll_numbers" value="{{ roll }}" {% if saved == 'Absent' %}checked{% endif %}>
+                                <span class="roll-id">{{ roll }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
 
                     <div class="actions">
                         <button class="btn btn-primary" type="submit">Submit Attendance</button>
@@ -338,11 +426,10 @@
         {% endif %}
     </div>
     <script>
-        function setAllAttendance(status) {
-            const targetValue = status === 'Present' ? 'Present' : 'Absent';
-            const selectors = document.querySelectorAll('input[type="radio"][value="' + targetValue + '"]');
+        function setAllAbsentees(checked) {
+            const selectors = document.querySelectorAll('input[type="checkbox"][name="absent_roll_numbers"]');
             selectors.forEach((input) => {
-                input.checked = true;
+                input.checked = checked;
             });
         }
     </script>

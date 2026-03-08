@@ -4,42 +4,53 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Faculty Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #f8f5ef;
-            --card: #ffffff;
-            --primary: #8b5e00;
-            --primary-dark: #6d4900;
-            --text: #1a1a1a;
-            --muted: #5f6b7a;
-            --border: #e5dbc3;
-            --success: #177245;
-            --error: #a32222;
+            --bg-1: #2d1800;
+            --bg-2: #513100;
+            --surface: #ffffff;
+            --surface-alt: #fff9ef;
+            --primary: #9e6800;
+            --primary-dark: #754d00;
+            --ink: #261900;
+            --muted: #716149;
+            --border: #ecdec1;
+            --success: #166e46;
+            --error: #a32a2a;
+            --shadow: rgba(72, 48, 0, 0.16);
+            --ring: rgba(158, 104, 0, 0.24);
         }
 
         * { box-sizing: border-box; }
 
         body {
             margin: 0;
-            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-            color: var(--text);
-            background: linear-gradient(125deg, #fff8eb, #f8f5ef);
-            padding: 20px;
+            min-height: 100vh;
+            font-family: "Manrope", "Segoe UI", sans-serif;
+            color: var(--ink);
+            background:
+                radial-gradient(circle at 10% 8%, rgba(255, 202, 98, 0.22), transparent 34%),
+                radial-gradient(circle at 89% 82%, rgba(244, 175, 41, 0.22), transparent 30%),
+                linear-gradient(135deg, var(--bg-1), var(--bg-2));
         }
 
         .container {
-            max-width: 1000px;
+            max-width: 1180px;
             margin: 0 auto;
+            padding: 22px;
             display: grid;
-            gap: 16px;
+            gap: 14px;
         }
 
         .panel {
-            background: var(--card);
+            background: var(--surface);
             border: 1px solid var(--border);
-            border-radius: 12px;
+            border-radius: 16px;
             padding: 16px;
-            box-shadow: 0 10px 22px rgba(139, 94, 0, 0.08);
+            box-shadow: 0 14px 28px var(--shadow);
         }
 
         .topbar {
@@ -48,35 +59,71 @@
             align-items: center;
             flex-wrap: wrap;
             gap: 10px;
+            border: 1px solid rgba(242, 214, 160, 0.34);
+            background: linear-gradient(150deg, rgba(69, 41, 0, 0.86), rgba(45, 24, 0, 0.9));
+            box-shadow: 0 22px 40px rgba(18, 9, 0, 0.38);
+            color: #fff2dc;
         }
 
-        h1, h2 {
-            margin-top: 0;
+        h1,
+        h2 {
+            margin: 0;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            color: #fff6e6;
+        }
+
+        h2 {
             color: var(--primary);
+            font-size: 1.2rem;
+        }
+
+        .subtitle {
+            margin-top: 4px;
+            color: #e9d0a8;
+            font-size: 0.9rem;
         }
 
         .cards {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 14px;
+            gap: 12px;
         }
 
         .card {
             border: 1px solid var(--border);
-            border-radius: 10px;
+            border-radius: 12px;
             padding: 14px;
-            background: #fffdf8;
+            background: var(--surface-alt);
+        }
+
+        .card h3 {
+            margin-top: 0;
+            margin-bottom: 6px;
+            color: #7b4f00;
         }
 
         .card p {
             color: var(--muted);
             margin-top: 4px;
+            margin-bottom: 12px;
+            font-size: 0.9rem;
+        }
+
+        .kpi {
+            margin-top: 8px;
+            font-size: 1.9rem;
+            line-height: 1;
+            font-weight: 800;
+            color: #7b4f00;
         }
 
         .export-form {
-            display: flex;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: 10px;
-            flex-wrap: wrap;
             align-items: end;
         }
 
@@ -84,36 +131,57 @@
             display: block;
             font-weight: 600;
             margin-bottom: 6px;
+            color: #6d4c10;
+            font-size: 0.86rem;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
         }
 
         .export-field input,
         .export-field select {
             padding: 9px 10px;
             border: 1px solid var(--border);
-            border-radius: 8px;
-            min-width: 170px;
+            border-radius: 10px;
             font-size: 0.95rem;
+            width: 100%;
+            background: #fff;
+            font-family: inherit;
         }
 
         .export-actions {
             display: flex;
             gap: 10px;
             flex-wrap: wrap;
+            align-items: end;
         }
 
         .btn {
             display: inline-block;
             text-decoration: none;
             border: none;
-            border-radius: 8px;
+            border-radius: 10px;
             padding: 9px 12px;
-            font-weight: 600;
+            font-weight: 700;
             cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .btn:focus-visible,
+        input:focus-visible,
+        select:focus-visible {
+            outline: 2px solid var(--primary);
+            outline-offset: 1px;
+            box-shadow: 0 0 0 4px var(--ring);
         }
 
         .btn-primary {
             background: var(--primary);
             color: #ffffff;
+            box-shadow: 0 10px 18px rgba(158, 104, 0, 0.24);
         }
 
         .btn-primary:hover {
@@ -121,26 +189,28 @@
         }
 
         .btn-muted {
-            background: #edf2f4;
-            color: #1a1a1a;
-            border: 1px solid #d5dde1;
+            background: #f9efe0;
+            color: #674300;
+            border: 1px solid #ecd7b2;
         }
 
         .flash {
             list-style: none;
-            margin: 0;
+            margin: 0 0 8px;
             padding: 0;
+            display: grid;
+            gap: 8px;
         }
 
         .flash li {
             padding: 10px;
-            border-radius: 8px;
-            margin-bottom: 8px;
+            border-radius: 10px;
             font-size: 0.92rem;
+            font-weight: 600;
         }
 
         .flash .success {
-            background: #e8f7ef;
+            background: #e8f9f1;
             color: var(--success);
             border: 1px solid #bde4cb;
         }
@@ -150,12 +220,41 @@
             color: var(--error);
             border: 1px solid #f3b6b6;
         }
+
+        .section-note {
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 0.88rem;
+        }
+
+        @media (max-width: 760px) {
+            .container {
+                padding: 14px;
+            }
+
+            h1 {
+                font-size: 1.45rem;
+            }
+
+            .export-actions {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .btn {
+                width: 100%;
+                text-align: center;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="panel topbar">
-            <h1>Faculty Dashboard</h1>
+            <div>
+                <h1>Faculty Operations Dashboard</h1>
+                <div class="subtitle">Daily attendance workflow and report exports.</div>
+            </div>
             <a class="btn btn-muted" href="{{ url_for('logout') }}">Logout</a>
         </div>
 
@@ -171,22 +270,26 @@
             {% endwith %}
 
             <h2>Workshop Sections</h2>
+            <div class="section-note">Choose a workshop to mark attendance or open student lists.</div>
             <div class="cards">
                 <div class="card">
                     <h3>VLSI Workshop</h3>
                     <p>{{ counts.vlsi }} students available</p>
+                    <div class="kpi">{{ counts.vlsi }}</div>
                     <a class="btn btn-primary" href="{{ url_for('mark_attendance', workshop_key='vlsi') }}">Mark Attendance</a>
                 </div>
 
                 <div class="card">
                     <h3>Embedded Systems Workshop</h3>
                     <p>{{ counts.embedded }} students available</p>
+                    <div class="kpi">{{ counts.embedded }}</div>
                     <a class="btn btn-primary" href="{{ url_for('mark_attendance', workshop_key='embedded') }}">Mark Attendance</a>
                 </div>
 
                 <div class="card">
                     <h3>Students Not in Workshop</h3>
                     <p>{{ counts.not_in_workshop }} students listed</p>
+                    <div class="kpi">{{ counts.not_in_workshop }}</div>
                     <a class="btn btn-primary" href="{{ url_for('not_in_workshop_students') }}">View List</a>
                 </div>
             </div>
@@ -194,6 +297,7 @@
 
         <div class="panel">
             <h2>Export Attendance PDF</h2>
+            <div class="section-note">Generate FN/AN session-wise absentees or presentees report for any date.</div>
             <form class="export-form" method="get">
                 <div class="export-field">
                     <label for="date">Date</label>

@@ -191,6 +191,24 @@
             padding: 8px;
         }
 
+        .links {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+            gap: 8px;
+            font-size: 0.86rem;
+        }
+
+        .links a {
+            color: #154f84;
+            text-decoration: none;
+            font-weight: 700;
+        }
+
+        .links a:hover {
+            text-decoration: underline;
+        }
+
         .top-chip {
             display: inline-flex;
             align-items: center;
@@ -264,6 +282,10 @@
 
                 <button type="submit">Login To Dashboard</button>
             </form>
+
+            <div class="links">
+                <a href="{{ url_for('forgot_password') }}">Forgot Password</a>
+            </div>
 
             <div class="hint">Authorized users: HOD and Faculty</div>
         </div>
