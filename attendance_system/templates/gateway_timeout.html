@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gateway Timeout</title>
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            background: #f4f6f8;
+            color: #1f2937;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            padding: 20px;
+        }
+
+        .card {
+            width: min(700px, 100%);
+            background: #ffffff;
+            border: 1px solid #d7dfe8;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 10px 26px rgba(0, 0, 0, 0.08);
+        }
+
+        .alert {
+            background: linear-gradient(180deg, #d82f45, #b71f35);
+            color: #fff;
+            border-radius: 8px;
+            padding: 14px 16px;
+        }
+
+        h1 {
+            margin: 0 0 6px;
+            font-size: 1.1rem;
+        }
+
+        p {
+            margin: 0;
+            font-size: 1rem;
+            line-height: 1.4;
+        }
+
+        .help {
+            margin-top: 14px;
+            color: #6b7280;
+        }
+
+        a {
+            display: inline-block;
+            margin-top: 12px;
+            color: #0b63f6;
+            text-decoration: none;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <section class="alert">
+            <h1>404 Gateway Time</h1>
+            <p>Service is currently stopped by server control. HOD, Faculty, and Edit logins are temporarily unavailable.</p>
+        </section>
+        <p class="help">Ask Server login user to click Start in Server Control Center.</p>
+        <a href="{{ url_for('login') }}">Go to Login</a>
+    </main>
+</body>
+</html>

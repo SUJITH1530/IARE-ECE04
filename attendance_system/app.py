@@ -66,7 +66,16 @@ DEFAULT_STAFF_USERS = {
         "security_question": "What is your department code?",
         "security_answer": "ECE",
     },
+    "server": {
+        "password": "IARE@87900",
+        "role": "server",
+        "email": "server@example.com",
+        "security_question": "What is your department code?",
+        "security_answer": "ECE",
+    },
 }
+
+PAUSED_ROLES = {"hod", "faculty", "editor"}
 
 STUDENT_COMMON_PASSWORD = os.environ.get("STUDENT_COMMON_PASSWORD", "IARE@2026")
 
@@ -168,6 +177,16 @@ def ensure_database() -> None:
                 action TEXT NOT NULL,
                 details TEXT,
                 created_at TEXT NOT NULL
+            )
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             )
             """
         )
@@ -495,6 +514,63 @@ def get_recent_audit_logs(limit: int = 25) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def get_recent_role_audit_logs(roles: tuple[str, ...], limit: int = 50) -> list[dict]:
+    if not roles:
+        return []
+
+    placeholders = ",".join(["?"] * len(roles))
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT a.actor, a.action, a.details, a.created_at
+            FROM audit_logs a
+            INNER JOIN users u ON u.username = a.actor
+            WHERE u.role IN ({placeholders})
+            ORDER BY a.id DESC
+            LIMIT ?
+            """,
+            (*roles, limit),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_app_setting(key: str, default: str = "") -> str:
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return default
+    return row["value"]
+
+
+def set_app_setting(key: str, value: str) -> None:
+    conn = get_db_connection()
+    try:
+        now_iso = datetime.now().isoformat(timespec="seconds")
+        conn.execute(
+            """
+            INSERT INTO app_settings (key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = excluded.updated_at
+            """,
+            (key, value, now_iso),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def is_system_paused() -> bool:
+    return get_app_setting("service_paused", "0") == "1"
+
+
 def is_valid_roll_number(roll_number: str) -> bool:
     return bool(re.fullmatch(r"[A-Za-z0-9]{6,20}", (roll_number or "").strip()))
 
@@ -675,12 +751,16 @@ migrate_csv_attendance_to_db_if_needed()
 
 @app.before_request
 def apply_session_timeout() -> None:
-    if request.endpoint in {"login", "forgot_password", "static"}:
+    if request.endpoint in {"login", "forgot_password", "logout", "static"}:
         return
 
     username = session.get("username")
     if not username:
         return
+
+    current_role = session.get("role")
+    if is_system_paused() and current_role in PAUSED_ROLES:
+        return render_gateway_timeout_page()
 
     last_active_raw = session.get("last_activity")
     if last_active_raw:
@@ -1200,6 +1280,9 @@ def login():
             flash("This account is inactive. Contact administrator.", "error")
             return render_template("login.html")
 
+        if staff_user and staff_user["role"] in PAUSED_ROLES and is_system_paused():
+            return render_gateway_timeout_page()
+
         staff_authenticated = bool(
             staff_user and check_password_hash(staff_user["password_hash"], password)
         )
@@ -1261,8 +1344,8 @@ def forgot_password():
             flash("User not found.", "error")
             return render_template("forgot_password.html", security_question=security_question)
 
-        if user["role"] not in {"hod", "faculty", "editor"}:
-            flash("Password reset is available only for HOD, Faculty, and Edit accounts.", "error")
+        if user["role"] not in {"hod", "faculty", "editor", "server"}:
+            flash("Password reset is available only for HOD, Faculty, Edit, and Server accounts.", "error")
             return render_template("forgot_password.html", security_question=security_question)
 
         if new_password != confirm_password:
@@ -1308,6 +1391,7 @@ def dashboard_action_for_role(role: str | None) -> str:
         "editor": "edit/dashboard",
         "faculty": "faculty/dashboard",
         "student": "student/dashboard",
+        "server": "server/dashboard",
     }.get((role or "").strip().lower(), "")
 
 
@@ -1332,6 +1416,10 @@ def redirect_home_action(action: str, **params):
 
 def render_access_denied():
     return render_template("access_denied.html"), 403
+
+
+def render_gateway_timeout_page():
+    return render_template("gateway_timeout.html"), 504
 
 
 def redirect_editor_dashboard():
@@ -1428,7 +1516,7 @@ def hod_dashboard():
 
 
 @app.route("/home")
-@roles_required("hod", "editor", "faculty", "student")
+@roles_required("hod", "editor", "faculty", "student", "server")
 def editor_dashboard_home():
     role = session.get("role")
     action = (request.args.get("action") or "").strip().lower()
@@ -1437,6 +1525,7 @@ def editor_dashboard_home():
         "editor": {"edit/dashboard"},
         "faculty": {"faculty/dashboard"},
         "student": {"student/dashboard"},
+        "server": {"server/dashboard"},
     }
     role_allowed_actions = allowed_actions.get(role, set())
 
@@ -1450,7 +1539,41 @@ def editor_dashboard_home():
         return hod_dashboard()
     if role == "faculty":
         return faculty_dashboard()
+    if role == "server":
+        return server_dashboard()
     return student_dashboard()
+
+
+@app.route("/server/dashboard")
+@role_required("server")
+def server_dashboard():
+    return render_template(
+        "server_dashboard.html",
+        service_paused=is_system_paused(),
+        hod_faculty_logs=get_recent_role_audit_logs(("hod", "faculty"), limit=60),
+        attendance_post_logs=[
+            row
+            for row in get_recent_role_audit_logs(("faculty",), limit=80)
+            if row.get("action") == "ATTENDANCE_POSTED"
+        ][:30],
+    )
+
+
+@app.route("/server/toggle-service", methods=["POST"])
+@role_required("server")
+def server_toggle_service():
+    mode = (request.form.get("mode") or "").strip().lower()
+    if mode == "stop":
+        set_app_setting("service_paused", "1")
+        add_audit_log("SERVICE_STOPPED", "Server account paused HOD/Faculty/Edit access.")
+        flash("Service stopped. HOD, Faculty, and Edit access is now blocked.", "success")
+    elif mode == "start":
+        set_app_setting("service_paused", "0")
+        add_audit_log("SERVICE_STARTED", "Server account resumed HOD/Faculty/Edit access.")
+        flash("Service started. HOD, Faculty, and Edit access is now active.", "success")
+    else:
+        flash("Invalid service mode action.", "error")
+    return redirect_role_dashboard("server")
 
 
 @app.route("/faculty/dashboard")

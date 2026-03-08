@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server Dashboard</title>
+    <style>
+        :root {
+            --bg: #f3f5f8;
+            --card: #ffffff;
+            --ink: #1f2937;
+            --muted: #6b7280;
+            --brand: #0e7490;
+            --ok: #137a3f;
+            --danger: #c62828;
+            --line: #dbe2ea;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg);
+            color: var(--ink);
+        }
+
+        .wrap {
+            max-width: 1180px;
+            margin: 0 auto;
+            padding: 20px;
+            display: grid;
+            gap: 14px;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 16px;
+        }
+
+        h1, h2 { margin: 0 0 8px; }
+
+        .sub { color: var(--muted); margin: 0; }
+
+        .top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            border: none;
+            border-radius: 8px;
+            padding: 9px 12px;
+            font-weight: 700;
+            cursor: pointer;
+            color: #fff;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-stop { background: var(--danger); }
+        .btn-start { background: var(--ok); }
+        .btn-logout { background: #4b5563; }
+
+        .status {
+            font-weight: 700;
+            color: {{ 'var(--danger)' if service_paused else 'var(--ok)' }};
+        }
+
+        .flash {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: grid;
+            gap: 8px;
+        }
+
+        .flash li {
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            font-weight: 600;
+        }
+
+        .flash .success { background: #ebf8ef; border-color: #b7e3c5; color: var(--ok); }
+        .flash .error { background: #fdecec; border-color: #f3b9b9; color: var(--danger); }
+
+        .grid {
+            display: grid;
+            gap: 14px;
+            grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+        }
+
+        .table-wrap {
+            overflow-x: auto;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: #fff;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 560px;
+        }
+
+        th, td {
+            text-align: left;
+            vertical-align: top;
+            padding: 9px;
+            border-bottom: 1px solid #e8edf3;
+            font-size: 0.9rem;
+        }
+
+        th {
+            background: #f5f9fc;
+            font-size: 0.76rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #334155;
+        }
+
+        tr:last-child td { border-bottom: none; }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <section class="card top">
+            <div>
+                <h1>Server Control Center</h1>
+                <p class="sub">Monitor HOD/Faculty operations and control service availability.</p>
+                <p class="sub">Current State: <span class="status">{{ 'STOPPED' if service_paused else 'RUNNING' }}</span></p>
+            </div>
+            <div>
+                {% if service_paused %}
+                <form method="post" action="{{ url_for('server_toggle_service') }}" style="display:inline-block;">
+                    <input type="hidden" name="mode" value="start">
+                    <button class="btn btn-start" type="submit">Start</button>
+                </form>
+                {% else %}
+                <form method="post" action="{{ url_for('server_toggle_service') }}" style="display:inline-block;">
+                    <input type="hidden" name="mode" value="stop">
+                    <button class="btn btn-stop" type="submit">Stop</button>
+                </form>
+                {% endif %}
+                <a class="btn btn-logout" href="{{ url_for('logout') }}">Logout</a>
+            </div>
+        </section>
+
+        <section class="card">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <ul class="flash">
+                        {% for category, message in messages %}
+                            <li class="{{ category }}">{{ message }}</li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+            {% endwith %}
+        </section>
+
+        <section class="grid">
+            <div class="card">
+                <h2>HOD & Faculty Activity</h2>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Actor</th>
+                                <th>Action</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for log in hod_faculty_logs %}
+                                <tr>
+                                    <td>{{ log.created_at }}</td>
+                                    <td>{{ log.actor }}</td>
+                                    <td>{{ log.action }}</td>
+                                    <td>{{ log.details or '-' }}</td>
+                                </tr>
+                            {% else %}
+                                <tr>
+                                    <td colspan="4">No HOD/Faculty activity yet.</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Faculty Attendance Posted</h2>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Faculty</th>
+                                <th>Action</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for log in attendance_post_logs %}
+                                <tr>
+                                    <td>{{ log.created_at }}</td>
+                                    <td>{{ log.actor }}</td>
+                                    <td>{{ log.action }}</td>
+                                    <td>{{ log.details or '-' }}</td>
+                                </tr>
+                            {% else %}
+                                <tr>
+                                    <td colspan="4">No attendance posting logs yet.</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </div>
+</body>
+</html>
