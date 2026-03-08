@@ -1214,9 +1214,7 @@ def login():
             session.permanent = True
             add_audit_log("LOGIN_SUCCESS", f"Role={role}", actor=normalized_username)
             flash("Login successful.", "success")
-            if role in {"hod", "editor"}:
-                return redirect(url_for("hod_dashboard"))
-            return redirect(url_for("faculty_dashboard"))
+            return redirect_role_dashboard(role)
 
         all_users = build_users()
         user = all_users.get((username or "").strip().upper())
@@ -1230,7 +1228,7 @@ def login():
             session.permanent = True
             add_audit_log("LOGIN_SUCCESS", "Role=student", actor=user["username"])
             flash("Login successful.", "success")
-            return redirect(url_for("student_dashboard"))
+            return redirect_role_dashboard(user["role"])
 
         attempts, new_lock_until = register_failed_attempt(normalized_username)
         remaining = max(0, MAX_LOGIN_ATTEMPTS - attempts)
@@ -1303,6 +1301,30 @@ def logout():
         add_audit_log("LOGOUT", "User logged out.", actor=actor)
     flash("Logged out successfully.", "success")
     return redirect(url_for("login"))
+
+
+def dashboard_action_for_role(role: str | None) -> str:
+    return {
+        "hod": "hod/dashboard",
+        "editor": "edit/dashboard",
+        "faculty": "faculty/dashboard",
+        "student": "student/dashboard",
+    }.get((role or "").strip().lower(), "")
+
+
+def redirect_role_dashboard(role: str | None):
+    action = dashboard_action_for_role(role)
+    if not action:
+        return redirect(url_for("login"))
+    return redirect(f"/home?action={action}")
+
+
+def redirect_current_user_dashboard():
+    return redirect_role_dashboard(session.get("role"))
+
+
+def redirect_editor_dashboard():
+    return redirect_role_dashboard("editor")
 
 
 @app.route("/hod/dashboard", methods=["GET", "POST"])
@@ -1392,6 +1414,22 @@ def hod_dashboard():
         can_manage_accounts=can_manage_accounts,
         is_editor=is_editor,
     )
+
+
+@app.route("/home")
+@roles_required("hod", "editor", "faculty", "student")
+def editor_dashboard_home():
+    role = session.get("role")
+    action = (request.args.get("action") or "").strip().lower()
+    expected_action = dashboard_action_for_role(role)
+    if action != expected_action:
+        return redirect_role_dashboard(role)
+
+    if role in {"hod", "editor"}:
+        return hod_dashboard()
+    if role == "faculty":
+        return faculty_dashboard()
+    return student_dashboard()
 
 
 @app.route("/faculty/dashboard")
@@ -1535,7 +1573,7 @@ def add_student_hod():
     if ok:
         add_audit_log("STUDENT_ADDED", f"Added {roll_number.strip().upper()} to {workshop_key}.")
     flash(message, "success" if ok else "error")
-    return redirect(url_for("hod_dashboard"))
+    return redirect_role_dashboard("hod")
 
 
 @app.route("/hod/change-password", methods=["POST"])
@@ -1549,21 +1587,21 @@ def change_hod_password():
     user = get_staff_user(username)
     if not user or user["role"] != "hod":
         flash("HOD account not found.", "error")
-        return redirect(url_for("hod_dashboard"))
+        return redirect_role_dashboard("hod")
 
     if not check_password_hash(user["password_hash"], current_password):
         flash("Current password is incorrect.", "error")
-        return redirect(url_for("hod_dashboard"))
+        return redirect_role_dashboard("hod")
 
     if new_password != confirm_password:
         flash("New password and confirmation do not match.", "error")
-        return redirect(url_for("hod_dashboard"))
+        return redirect_role_dashboard("hod")
 
     ok, message = update_staff_password(username, new_password)
     if ok:
         add_audit_log("PASSWORD_CHANGED", "HOD changed account password.")
     flash(message, "success" if ok else "error")
-    return redirect(url_for("hod_dashboard"))
+    return redirect_role_dashboard("hod")
 
 
 @app.route("/faculty/add", methods=["POST"])
@@ -1578,7 +1616,7 @@ def add_faculty_account():
     if ok:
         add_audit_log("FACULTY_ADDED", f"Created faculty account {normalize_username(username)}.")
     flash(message, "success" if ok else "error")
-    return redirect(url_for("hod_dashboard"))
+    return redirect_editor_dashboard()
 
 
 @app.route("/faculty/remove", methods=["POST"])
@@ -1589,7 +1627,7 @@ def remove_faculty_account():
     if ok:
         add_audit_log("FACULTY_REMOVED", f"Removed faculty account {normalize_username(username)}.")
     flash(message, "success" if ok else "error")
-    return redirect(url_for("hod_dashboard"))
+    return redirect_editor_dashboard()
 
 
 @app.route("/faculty/reset-password", methods=["POST"])
@@ -1601,13 +1639,13 @@ def reset_faculty_password():
     user = get_staff_user(normalized)
     if not user or user["role"] != "faculty":
         flash("Faculty account not found.", "error")
-        return redirect(url_for("hod_dashboard"))
+        return redirect_editor_dashboard()
 
     ok, message = update_staff_password(normalized, new_password)
     if ok:
         add_audit_log("FACULTY_PASSWORD_RESET", f"Reset password for faculty {normalized}.")
     flash(message, "success" if ok else "error")
-    return redirect(url_for("hod_dashboard"))
+    return redirect_editor_dashboard()
 
 
 @app.route("/students/remove", methods=["POST"])
@@ -1619,7 +1657,7 @@ def remove_student_hod():
     if ok:
         add_audit_log("STUDENT_REMOVED", f"Removed {roll_number.strip().upper()} from {workshop_key}.")
     flash(message, "success" if ok else "error")
-    return redirect(url_for("hod_dashboard"))
+    return redirect_editor_dashboard()
 
 
 @app.route("/students/move", methods=["POST"])
@@ -1638,7 +1676,7 @@ def move_student_hod():
             ),
         )
     flash(message, "success" if ok else "error")
-    return redirect(url_for("hod_dashboard"))
+    return redirect_editor_dashboard()
 
 
 @app.route("/students/update-roll", methods=["POST"])
@@ -1654,7 +1692,7 @@ def update_student_roll_hod():
             f"Updated roll {old_roll.strip().upper()} to {new_roll.strip().upper()} in {workshop_key}.",
         )
     flash(message, "success" if ok else "error")
-    return redirect(url_for("hod_dashboard"))
+    return redirect_editor_dashboard()
 
 
 @app.route("/attendance/<workshop_key>", methods=["GET", "POST"])
@@ -1662,7 +1700,7 @@ def update_student_roll_hod():
 def mark_attendance(workshop_key):
     if workshop_key not in {"vlsi", "embedded"}:
         flash("Invalid workshop selection.", "error")
-        return redirect(url_for("faculty_dashboard"))
+        return redirect_role_dashboard("faculty")
 
     students = get_workshop_students(workshop_key)
     selected_date = request.args.get("date", date.today().isoformat())
@@ -1776,7 +1814,7 @@ def mark_attendance(workshop_key):
 def add_student_faculty(workshop_key):
     if workshop_key not in {"vlsi", "embedded"}:
         flash("Invalid workshop selection.", "error")
-        return redirect(url_for("faculty_dashboard"))
+        return redirect_role_dashboard("faculty")
 
     roll_number = request.form.get("roll_number", "")
     selected_date = request.form.get("date", date.today().isoformat())
@@ -2166,7 +2204,7 @@ def delete_attendance_batch():
 def download_sample_csv(workshop_key):
     if workshop_key not in WORKSHOP_FILES:
         flash("Invalid sample CSV request.", "error")
-        return redirect(url_for("hod_dashboard"))
+        return redirect_role_dashboard("hod")
 
     output = io.StringIO()
     writer = csv.writer(output)
