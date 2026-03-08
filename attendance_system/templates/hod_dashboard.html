@@ -328,15 +328,24 @@
     <div class="layout">
         <section class="hero">
             <div>
-                <h1>HOD Control Center</h1>
-                <div class="subtitle">ECE workshop operations, faculty governance, and attendance insights in one place.</div>
+                <h1>{{ 'Edit Control Center' if is_editor else 'HOD Control Center' }}</h1>
+                <div class="subtitle">
+                    {% if is_editor %}
+                        Faculty account and student edit operations.
+                    {% else %}
+                        ECE workshop operations, faculty governance, and attendance insights in one place.
+                    {% endif %}
+                </div>
             </div>
             <div class="actions">
+                {% if not is_editor %}
                 <a class="btn btn-primary" href="{{ url_for('attendance_report') }}">View Attendance Reports</a>
+                {% endif %}
                 <a class="btn btn-muted" href="{{ url_for('logout') }}">Logout</a>
             </div>
         </section>
 
+        {% if not is_editor %}
         <section class="panel">
             <h2>Domain Snapshot</h2>
             <div class="hint">Live student counts across all available domains.</div>
@@ -355,7 +364,9 @@
                 </div>
             </div>
         </section>
+        {% endif %}
 
+        {% if not is_editor %}
         <section class="panel">
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
@@ -424,7 +435,9 @@
                 </div>
             {% endif %}
         </section>
+        {% endif %}
 
+        {% if not is_editor %}
         <section class="panel two-col">
             <div>
                 <h2>Add Roll Number to Any Domain</h2>
@@ -468,6 +481,7 @@
                 </form>
             </div>
         </section>
+        {% endif %}
 
         {% if can_manage_accounts %}
         <section class="panel">
@@ -594,6 +608,48 @@
         {% endif %}
 
         <section class="panel">
+            {% if is_editor %}
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <ul class="flash" style="margin-bottom: 10px;">
+                        {% for category, message in messages %}
+                            <li class="{{ category }}">{{ message }}</li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+            {% endwith %}
+            {% endif %}
+            <h2>Recent Audit Logs</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Actor</th>
+                            <th>Action</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in audit_logs %}
+                            <tr>
+                                <td>{{ log.created_at }}</td>
+                                <td>{{ log.actor }}</td>
+                                <td>{{ log.action }}</td>
+                                <td>{{ log.details or '-' }}</td>
+                            </tr>
+                        {% else %}
+                            <tr>
+                                <td colspan="4">No logs yet.</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        {% if not is_editor %}
+        <section class="panel">
             <h2>Analytics ({{ analytics.today }})</h2>
             <div class="grid" style="margin-top: 10px;">
                 {% for card in analytics.cards %}
@@ -662,36 +718,7 @@
                 </table>
             </div>
         </section>
-
-        <section class="panel">
-            <h2>Recent Audit Logs</h2>
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Time</th>
-                            <th>Actor</th>
-                            <th>Action</th>
-                            <th>Details</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for log in audit_logs %}
-                            <tr>
-                                <td>{{ log.created_at }}</td>
-                                <td>{{ log.actor }}</td>
-                                <td>{{ log.action }}</td>
-                                <td>{{ log.details or '-' }}</td>
-                            </tr>
-                        {% else %}
-                            <tr>
-                                <td colspan="4">No logs yet.</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </section>
+        {% endif %}
     </div>
 </body>
 </html>

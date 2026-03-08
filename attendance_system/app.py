@@ -1308,7 +1308,8 @@ def logout():
 @app.route("/hod/dashboard", methods=["GET", "POST"])
 @roles_required("hod", "editor")
 def hod_dashboard():
-    can_manage_accounts = session.get("role") == "editor"
+    is_editor = session.get("role") == "editor"
+    can_manage_accounts = is_editor
 
     if request.method == "POST":
         if request.form.get("confirm_csv_upload") == "1":
@@ -1389,6 +1390,7 @@ def hod_dashboard():
         audit_logs=get_recent_audit_logs(limit=20),
         csv_preview_report=session.get("csv_preview_report") or {},
         can_manage_accounts=can_manage_accounts,
+        is_editor=is_editor,
     )
 
 
