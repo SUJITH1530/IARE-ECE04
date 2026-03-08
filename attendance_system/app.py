@@ -58,6 +58,13 @@ DEFAULT_STAFF_USERS = {
         "security_question": "What is your department code?",
         "security_answer": "ECE",
     },
+    "edit": {
+        "password": "edit@95",
+        "role": "editor",
+        "email": "edit@example.com",
+        "security_question": "What is your department code?",
+        "security_answer": "ECE",
+    },
 }
 
 STUDENT_COMMON_PASSWORD = os.environ.get("STUDENT_COMMON_PASSWORD", "IARE@2026")
@@ -1207,7 +1214,7 @@ def login():
             session.permanent = True
             add_audit_log("LOGIN_SUCCESS", f"Role={role}", actor=normalized_username)
             flash("Login successful.", "success")
-            if role == "hod":
+            if role in {"hod", "editor"}:
                 return redirect(url_for("hod_dashboard"))
             return redirect(url_for("faculty_dashboard"))
 
@@ -1257,8 +1264,8 @@ def forgot_password():
             flash("User not found.", "error")
             return render_template("forgot_password.html", security_question=security_question)
 
-        if user["role"] not in {"hod", "faculty"}:
-            flash("Password reset is available only for HOD and Faculty.", "error")
+        if user["role"] not in {"hod", "faculty", "editor"}:
+            flash("Password reset is available only for HOD, Faculty, and Edit accounts.", "error")
             return render_template("forgot_password.html", security_question=security_question)
 
         if new_password != confirm_password:
@@ -1299,8 +1306,10 @@ def logout():
 
 
 @app.route("/hod/dashboard", methods=["GET", "POST"])
-@role_required("hod")
+@roles_required("hod", "editor")
 def hod_dashboard():
+    can_manage_accounts = session.get("role") == "editor"
+
     if request.method == "POST":
         if request.form.get("confirm_csv_upload") == "1":
             preview_payload = session.get("csv_preview_payload") or {}
@@ -1379,6 +1388,7 @@ def hod_dashboard():
         students=get_all_students_with_workshop(),
         audit_logs=get_recent_audit_logs(limit=20),
         csv_preview_report=session.get("csv_preview_report") or {},
+        can_manage_accounts=can_manage_accounts,
     )
 
 
@@ -1555,7 +1565,7 @@ def change_hod_password():
 
 
 @app.route("/faculty/add", methods=["POST"])
-@role_required("hod")
+@role_required("editor")
 def add_faculty_account():
     username = request.form.get("faculty_username", "")
     password = request.form.get("faculty_password", "")
@@ -1570,7 +1580,7 @@ def add_faculty_account():
 
 
 @app.route("/faculty/remove", methods=["POST"])
-@role_required("hod")
+@role_required("editor")
 def remove_faculty_account():
     username = request.form.get("faculty_username", "")
     ok, message = remove_faculty_user(username)
@@ -1581,7 +1591,7 @@ def remove_faculty_account():
 
 
 @app.route("/faculty/reset-password", methods=["POST"])
-@role_required("hod")
+@role_required("editor")
 def reset_faculty_password():
     username = request.form.get("faculty_username", "")
     new_password = request.form.get("new_password", "")
@@ -1599,7 +1609,7 @@ def reset_faculty_password():
 
 
 @app.route("/students/remove", methods=["POST"])
-@role_required("hod")
+@role_required("editor")
 def remove_student_hod():
     workshop_key = request.form.get("workshop", "vlsi")
     roll_number = request.form.get("roll_number", "")
@@ -1611,7 +1621,7 @@ def remove_student_hod():
 
 
 @app.route("/students/move", methods=["POST"])
-@role_required("hod")
+@role_required("editor")
 def move_student_hod():
     source_workshop = request.form.get("source_workshop", "vlsi")
     target_workshop = request.form.get("target_workshop", "embedded")
@@ -1630,7 +1640,7 @@ def move_student_hod():
 
 
 @app.route("/students/update-roll", methods=["POST"])
-@role_required("hod")
+@role_required("editor")
 def update_student_roll_hod():
     workshop_key = request.form.get("workshop", "vlsi")
     old_roll = request.form.get("old_roll_number", "")

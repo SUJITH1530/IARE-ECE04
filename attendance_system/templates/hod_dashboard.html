@@ -469,6 +469,7 @@
             </div>
         </section>
 
+        {% if can_manage_accounts %}
         <section class="panel">
             <h2>Faculty Account Management</h2>
             <form method="post" action="{{ url_for('add_faculty_account') }}" class="inline-form" style="margin-top: 10px;">
@@ -530,7 +531,9 @@
                 </table>
             </div>
         </section>
+        {% endif %}
 
+        {% if can_manage_accounts %}
         <section class="panel">
             <h2>Student Management (Edit / Move / Remove)</h2>
             <div class="table-wrap">
@@ -588,6 +591,7 @@
                 </table>
             </div>
         </section>
+        {% endif %}
 
         <section class="panel">
             <h2>Analytics ({{ analytics.today }})</h2>
